@@ -6,16 +6,22 @@ import { fetchTraffic } from "@/lib/sources/traffic";
 import { fetchFlood } from "@/lib/sources/flood";
 import { fetchFireEvents } from "@/lib/sources/fire";
 import { fetchSecurityEvents } from "@/lib/sources/security";
+import { fetchSuspension } from "@/lib/sources/suspension";
+import { fetchGridStatus } from "@/lib/gridStatus";
 
 export async function aggregateEvents(): Promise<EventsResponse> {
-  const results = await Promise.allSettled([
-    fetchEarthquakes(),
-    fetchWeatherAlerts(),
-    fetchAirQuality(),
-    fetchTraffic(),
-    fetchFlood(),
-    fetchFireEvents(),
-    fetchSecurityEvents(),
+  const [results, gridStatus] = await Promise.all([
+    Promise.allSettled([
+      fetchEarthquakes(),
+      fetchWeatherAlerts(),
+      fetchAirQuality(),
+      fetchTraffic(),
+      fetchFlood(),
+      fetchFireEvents(),
+      fetchSecurityEvents(),
+      fetchSuspension(),
+    ]),
+    fetchGridStatus(),
   ]);
 
   const events: EventsResponse["events"] = [];
@@ -33,6 +39,7 @@ export async function aggregateEvents(): Promise<EventsResponse> {
   return {
     events,
     sources,
+    gridStatus,
     generatedAt: new Date().toISOString(),
   };
 }
