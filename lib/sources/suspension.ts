@@ -1,5 +1,6 @@
 import { PulseEvent, Severity } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
+import { endOfTaiwanDay } from "@/lib/freshness";
 import { fetchJson, ok, fail, pick } from "./util";
 
 const NAME = "人事行政總處 - 天然災害停止上班上課";
@@ -25,6 +26,7 @@ function demoData(): PulseEvent[] {
       county: "花蓮縣",
       location: countyCentroid("花蓮縣"),
       time: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+      validUntil: endOfTaiwanDay(),
       source: NAME,
       isDemo: true,
     },
@@ -36,6 +38,7 @@ function demoData(): PulseEvent[] {
       county: "臺東縣",
       location: countyCentroid("臺東縣"),
       time: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+      validUntil: endOfTaiwanDay(),
       source: NAME,
       isDemo: true,
     },
@@ -74,6 +77,9 @@ export async function fetchSuspension() {
         county,
         location: countyCentroid(county),
         time: new Date().toISOString(),
+        // DGPA 公告慣例上以「當日」為單位，官方 feed 本身未提供明確的結束時間，
+        // 這裡假設有效期到台灣當日 23:59:59，隔天公告會被新的一筆取代。
+        validUntil: endOfTaiwanDay(),
         source: NAME,
       });
     }

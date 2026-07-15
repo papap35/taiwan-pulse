@@ -3,6 +3,8 @@ import { CATEGORY_LABELS } from "@/lib/types";
 import { relativeTime, formatClock } from "@/lib/time";
 import CategoryDot from "./CategoryDot";
 import SeverityBadge from "./SeverityBadge";
+import FreshnessBadge from "./FreshnessBadge";
+import DemoBadge from "./DemoBadge";
 
 export default function EventList({
   events,
@@ -31,17 +33,20 @@ export default function EventList({
               selected?.id === e.id ? "bg-gridline-light/50 dark:bg-gridline-dark/50" : ""
             }`}
           >
-            <div className="flex items-center gap-2 text-xs text-ink-secondary-light dark:text-ink-secondary-dark">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-secondary-light dark:text-ink-secondary-dark">
               <CategoryDot category={e.category} />
               <span>{CATEGORY_LABELS[e.category]}</span>
               <span aria-hidden>・</span>
-              <span title={formatClock(e.time)}>{relativeTime(e.time)}</span>
+              <span>
+                {formatClock(e.time)}（{relativeTime(e.time)}）
+              </span>
               {e.county && (
                 <>
                   <span aria-hidden>・</span>
                   <span>{e.county}</span>
                 </>
               )}
+              {e.isDemo && <DemoBadge />}
             </div>
             <div className="mt-1 font-medium leading-snug">{e.title}</div>
             {e.description && (
@@ -49,12 +54,10 @@ export default function EventList({
                 {e.description}
               </div>
             )}
-            <div className="mt-1.5 flex items-center gap-2">
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <SeverityBadge severity={e.severity} />
-              <span className="text-xs text-ink-muted">
-                {e.source}
-                {e.isDemo && " ・ 示範資料"}
-              </span>
+              <FreshnessBadge event={e} />
+              <span className="text-xs text-ink-muted">來源：{e.source}</span>
             </div>
           </button>
         </li>

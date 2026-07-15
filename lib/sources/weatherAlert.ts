@@ -36,6 +36,7 @@ function demoData(): PulseEvent[] {
       county: "臺北市",
       location: countyCentroid("臺北市"),
       time: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
+      validUntil: new Date(Date.now() + 1000 * 60 * 60 * 4).toISOString(),
       source: NAME,
       isDemo: true,
     },
@@ -47,6 +48,7 @@ function demoData(): PulseEvent[] {
       county: "花蓮縣",
       location: countyCentroid("花蓮縣"),
       time: new Date(Date.now() - 1000 * 60 * 55).toISOString(),
+      validUntil: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
       source: NAME,
       isDemo: true,
     },
@@ -80,6 +82,9 @@ export async function fetchWeatherAlerts() {
           time: h.validTime?.startTime
             ? new Date(h.validTime.startTime).toISOString()
             : new Date().toISOString(),
+          validUntil: h.validTime?.endTime
+            ? new Date(h.validTime.endTime).toISOString()
+            : undefined,
           source: NAME,
         });
       }
