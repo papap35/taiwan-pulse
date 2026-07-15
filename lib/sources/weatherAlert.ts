@@ -18,7 +18,7 @@ interface CwaWeatherAlertResponse {
   records?: { location?: CwaLocation[] };
 }
 
-function phenomenaToSeverity(phenomena: string): Severity {
+export function phenomenaToSeverity(phenomena: string): Severity {
   if (/(海嘯|強烈颱風|超大豪雨|土石流紅色)/.test(phenomena)) return "critical";
   if (/(颱風|豪雨|土石流|強風|低溫特報橙|海上颱風)/.test(phenomena)) return "serious";
   if (/(大雨|濃霧|強陣風|低溫)/.test(phenomena)) return "warning";

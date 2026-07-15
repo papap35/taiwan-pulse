@@ -4,7 +4,7 @@ import { fetchJson, ok, fail, pick, safeIso } from "./util";
 
 const NAME = "環境部 - 空氣品質即時測站";
 
-function aqiToSeverity(aqi: number): Severity {
+export function aqiToSeverity(aqi: number): Severity {
   if (aqi >= 200) return "critical";
   if (aqi >= 150) return "serious";
   if (aqi >= 100) return "warning";

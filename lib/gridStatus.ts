@@ -15,7 +15,7 @@ function demoStatus(): GridStatus {
   };
 }
 
-function levelFromReserveRate(rate: number): GridStatusLevel {
+export function levelFromReserveRate(rate: number): GridStatusLevel {
   if (rate < 3) return "critical";
   if (rate < 6) return "serious";
   if (rate < 10) return "warning";

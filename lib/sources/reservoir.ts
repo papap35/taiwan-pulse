@@ -27,7 +27,7 @@ function demoData(): PulseEvent[] {
 // Approximate drought-stage thresholds — Taiwan's official 抗旱評估 stages
 // vary by reservoir and are set case-by-case by WRA, this is a reasonable
 // general-purpose approximation, not an official classification.
-function severityFromStoragePct(pct: number): Severity {
+export function severityFromStoragePct(pct: number): Severity {
   if (pct < 10) return "critical";
   if (pct < 20) return "serious";
   return "warning"; // 20–30%
