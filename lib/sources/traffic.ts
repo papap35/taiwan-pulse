@@ -67,10 +67,29 @@ export async function fetchTraffic() {
   }
   try {
     const token = await getToken(clientId, clientSecret);
-    const records = await fetchJson<Record<string, unknown>[]>(INCIDENT_URL, {
+    const raw = await fetchJson<unknown>(INCIDENT_URL, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const events: PulseEvent[] = (records ?? []).map((r, idx) => {
+    // TDX commonly wraps results in an envelope object (e.g.
+    // { RoadEvents: [...], UpdateTime: "...", ... }) rather than returning a
+    // bare array — confirmed in production (a bare-array assumption threw
+    // "(...).map is not a function"). Check several likely array keys.
+    const records: Record<string, unknown>[] = Array.isArray(raw)
+      ? (raw as Record<string, unknown>[])
+      : (() => {
+          const candidate = pick(
+            raw as Record<string, unknown>,
+            "RoadEvents",
+            "roadevents",
+            "RoadEventLiveEvents",
+            "LiveEvent",
+            "LiveEvents",
+            "Data",
+            "data"
+          );
+          return Array.isArray(candidate) ? (candidate as Record<string, unknown>[]) : [];
+        })();
+    const events: PulseEvent[] = records.map((r, idx) => {
       // TDX's "RoadEvent" family commonly nests location under a sub-object
       // (e.g. RoadEventLocation) rather than flat top-level fields — check
       // both shapes since the exact schema for this endpoint is still
