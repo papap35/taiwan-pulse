@@ -1,6 +1,10 @@
 import { Category, GridStatusLevel, Severity } from "@/lib/types";
 
 // Categorical hues — fixed order, never reassigned/cycled (dataviz color-formula rule).
+// Only 8 fixed slots exist. A 9th category never gets a generated hue — it
+// reuses the semantically closest existing slot and gets a distinct marker
+// SHAPE instead (see CATEGORY_SHAPE below) so color still follows identity
+// unambiguously wherever both categories could appear together.
 export const CATEGORY_COLORS: Record<Category, string> = {
   earthquake: "#2a78d6", // slot 1 blue
   flood: "#1baf7a", // slot 2 aqua
@@ -10,6 +14,7 @@ export const CATEGORY_COLORS: Record<Category, string> = {
   fire: "#e34948", // slot 6 red
   security: "#e87ba4", // slot 7 magenta
   suspension: "#eb6834", // slot 8 orange
+  epidemic: "#4a3aa7", // reuses slot 5 (air) — both are public-health domain; disambiguated by shape
 };
 
 export const CATEGORY_COLORS_DARK: Record<Category, string> = {
@@ -21,6 +26,23 @@ export const CATEGORY_COLORS_DARK: Record<Category, string> = {
   fire: "#e66767",
   security: "#d55181",
   suspension: "#d95926",
+  epidemic: "#9085e9",
+};
+
+// Shape is the composite-encoding channel for categories beyond the 8 fixed
+// hues. "circle" = has its own hue. "square" = shares a hue with another
+// category and relies on shape (plus the ever-present text label) for
+// disambiguation.
+export const CATEGORY_SHAPE: Record<Category, "circle" | "square"> = {
+  earthquake: "circle",
+  flood: "circle",
+  weather: "circle",
+  traffic: "circle",
+  air: "circle",
+  fire: "circle",
+  security: "circle",
+  suspension: "circle",
+  epidemic: "square",
 };
 
 // Status palette — fixed, never themed, always paired with icon + label.

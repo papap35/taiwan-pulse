@@ -6,7 +6,8 @@ export type Category =
   | "flood"
   | "fire"
   | "security"
-  | "suspension";
+  | "suspension"
+  | "epidemic";
 
 export type Severity = "info" | "warning" | "serious" | "critical";
 
@@ -68,6 +69,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   fire: "火災消防",
   security: "治安快訊",
   suspension: "停班停課",
+  epidemic: "疫情監測",
 };
 
 export const CATEGORY_ORDER: Category[] = [
@@ -79,6 +81,7 @@ export const CATEGORY_ORDER: Category[] = [
   "fire",
   "security",
   "suspension",
+  "epidemic",
 ];
 
 export const GRID_STATUS_LABELS: Record<GridStatusLevel, string> = {
