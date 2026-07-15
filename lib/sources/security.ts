@@ -57,7 +57,9 @@ export async function fetchSecurityEvents() {
   try {
     const items = await fetchAllFeeds(feeds);
     const events: PulseEvent[] = items
-      .filter((it) => keywords.some((kw) => it.title.includes(kw)))
+      .filter((it) =>
+        keywords.some((kw) => it.title.includes(kw) || (it.description ?? "").includes(kw))
+      )
       .slice(0, 20)
       .map((it, idx) => {
         const county = findCounty(it.title);
