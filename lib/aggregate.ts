@@ -8,6 +8,7 @@ import { fetchReservoirLevels } from "@/lib/sources/reservoir";
 import { fetchFireEvents } from "@/lib/sources/fire";
 import { fetchSecurityEvents } from "@/lib/sources/security";
 import { fetchSuspension } from "@/lib/sources/suspension";
+import { fetchEpidemic } from "@/lib/sources/epidemic";
 import { fetchGridStatus } from "@/lib/gridStatus";
 
 export async function aggregateEvents(): Promise<EventsResponse> {
@@ -22,6 +23,7 @@ export async function aggregateEvents(): Promise<EventsResponse> {
       fetchFireEvents(),
       fetchSecurityEvents(),
       fetchSuspension(),
+      fetchEpidemic(),
     ]),
     fetchGridStatus(),
   ]);

@@ -11,7 +11,9 @@ export default function Legend() {
           {CATEGORY_LABELS[c]}
         </span>
       ))}
-      <span className="ml-2">圓圈外框顏色代表嚴重程度（灰／黃／橘／紅）</span>
+      <span className="ml-2">
+        圓圈外框顏色代表嚴重程度（灰／黃／橘／紅）・方形標記代表與空氣品質共用色相的疫情監測
+      </span>
     </div>
   );
 }
