@@ -22,7 +22,8 @@ export interface PulseEvent {
     lng: number;
     name?: string;
   };
-  time: string; // ISO 8601
+  time: string; // ISO 8601 — 發布/觀測時間
+  validUntil?: string; // ISO 8601 — 官方標示的有效期限（例如天氣特報的解除時間），來源沒有提供時留空
   source: string;
   sourceUrl?: string;
   isDemo?: boolean;

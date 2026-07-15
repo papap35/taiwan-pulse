@@ -4,8 +4,10 @@ import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaf
 import { useEffect } from "react";
 import { PulseEvent } from "@/lib/types";
 import { CATEGORY_COLORS, SEVERITY_COLORS } from "@/lib/style";
-import { relativeTime } from "@/lib/time";
+import { relativeTime, formatClock } from "@/lib/time";
 import SeverityBadge from "./SeverityBadge";
+import FreshnessBadge from "./FreshnessBadge";
+import DemoBadge from "./DemoBadge";
 
 const TAIWAN_CENTER: [number, number] = [23.7, 121.0];
 
@@ -57,13 +59,16 @@ export default function MapView({
           eventHandlers={{ click: () => onSelect(e) }}
         >
           <Popup>
-            <div className="min-w-[200px] space-y-1 text-sm">
+            <div className="min-w-[220px] space-y-1.5 text-sm">
+              {e.isDemo && <DemoBadge />}
               <div className="font-semibold">{e.title}</div>
-              <SeverityBadge severity={e.severity} />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <SeverityBadge severity={e.severity} />
+                <FreshnessBadge event={e} />
+              </div>
               {e.description && <p className="text-xs opacity-80">{e.description}</p>}
               <p className="text-xs opacity-60">
-                {relativeTime(e.time)} ・ {e.source}
-                {e.isDemo && "（示範資料）"}
+                發布於 {formatClock(e.time)}（{relativeTime(e.time)}） ・ 來源：{e.source}
               </p>
               {e.sourceUrl && (
                 <a
