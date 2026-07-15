@@ -1,219 +1,121 @@
-# AGENTS.md — 開發規範手冊
+# AGENTS.md — 開發規範手冊（Taiwan Pulse）
 
 本文件定義所有 AI agent 與人類開發者在此專案中必須遵守的原則。
 每次開發新功能、修 bug、更新 SPEC.md 前，請先通讀對應章節。
 
-> **每次 PR 前都必須執行 3.5 Step 2.5 文件同步檢查**，確認 SPEC.md、README.md、USER_MANUAL.md、AGENTS.md 均已反映本次異動。
+> **每次 PR 前都必須執行 3.5 Step 2.5 文件同步檢查**，確認 SPEC.md、README.md、
+> `.env.example`、AGENTS.md 均已反映本次異動。
 
 ---
 
 ## 目錄
 
 1. [寫程式的原則](#1-寫程式的原則)
-2. [測試的原則](#2-測試的原則)
+2. [測試與驗證的原則](#2-測試與驗證的原則)
 3. [開發流程原則（Branch → Commit → PR）](#3-開發流程原則branch--commit--pr)
-4. [Commit Code 的原則（Branch 上的 commit）](#4-commit-code-的原則branch-上的-commit)
+4. [Commit 的原則](#4-commit-的原則)
 5. [判讀與更新 SPEC.md 的原則](#5-判讀與更新-specmd-的原則)
 
 ---
 
 ## 1. 寫程式的原則
 
-### 1.1 高內聚低耦合（核心架構原則）
-
-- **純計算邏輯** 必須放在 `frontend/src/utils/` 下的純函式模組，不依賴任何 React hook、store 或 UI。
-- **UI 元件**（`components/`）只能從 `utils/` 或自己的 props 取得資料，禁止從其他 UI 元件直接 import 業務邏輯。
-- **Store**（`stores/`）只負責狀態持久化與跨元件共享，不含複雜的計算邏輯。
-- 違反此原則的典型反例：`Dashboard.jsx` import `calcPortfolio` from `Watchlist.jsx`（已修正為從 `utils/portfolio.js` import）。
+### 1.1 分層架構（依賴方向固定）
 
 ```
 允許的依賴方向：
-  components → utils        ✅
-  components → stores       ✅
-  components → services     ✅
-  utils → （無任何依賴）      ✅
-  stores → utils            ✅
-  components → components   ❌（禁止 import 業務邏輯）
+  app/                → components/, lib/           ✅
+  components/         → lib/（types, style, time, counties）✅
+  components/Dashboard → 其他 components（純組裝，無業務邏輯）✅
+  lib/aggregate.ts    → lib/sources/*.ts, lib/gridStatus.ts ✅
+  lib/sources/*.ts    → lib/sources/util.ts, lib/counties.ts, lib/types.ts ✅
+  lib/sources/*.ts    → 其他 lib/sources/*.ts        ❌（每個來源互相獨立）
+  components/X        → components/Y 的業務邏輯       ❌（只能共用 lib/ 底下的東西）
 ```
 
-### 1.2 純函式優先
+- 一個資料來源 = 一個 `lib/sources/<name>.ts`，對外只匯出 `fetchXxx()`，回傳
+  `{ events: PulseEvent[], status: SourceStatus }`（用 `ok()` / `fail()` helper 組裝）。
+- 新增分類事件來源時比照既有檔案的結構：`demoData()` 產生示範資料 → 有金鑰/URL
+  才呼叫真實 API → try/catch 失敗一律 `fail()` 退回示範資料，**絕不讓單一來源的
+  例外往上炸掉整個 `/api/events`**。
+- 「系統狀態」型資料（像 `lib/gridStatus.ts` 電力供需燈號）與「分類事件」型資料
+  （`lib/sources/*.ts`）分開放：前者沒有座標、是單一全國指標，不佔用
+  `CATEGORY_ORDER` 的色相名額。
 
-- 所有可以寫成純函式的計算，**必須**寫成純函式（相同輸入永遠得到相同輸出，無副作用）。
-- 純函式放在 `utils/` 下，並附上 JSDoc 說明參數型別與回傳值。
-- 需要副作用的操作（API 呼叫、localStorage、DOM 操作）集中在 hooks、services、store action 中。
+### 1.2 資料正規化與型別
 
-```js
-// ✅ 純函式（utils/portfolio.js）
-export function calcRR(cost, target, stopLoss) { ... }
-
-// ❌ 不純（混入副作用）
-export function calcRR(cost, target, stopLoss) {
-  localStorage.setItem('lastRR', result); // 副作用
-  return result;
-}
-```
+- 所有分類事件必須符合 `lib/types.ts` 的 `PulseEvent`，欄位語意固定：
+  `severity` 只能是 `info|warning|serious|critical`，`category` 必須先加進
+  `CATEGORY_ORDER`（見 1.4 色彩規則）才能使用。
+- 新增欄位時同步更新 `lib/types.ts` 的介面與對應的 `_LABELS` 常數，不要在元件
+  裡硬寫中文字串。
 
 ### 1.3 防禦性資料處理
 
-- 任何從外部來的數值（API 回應、localStorage、使用者輸入），都必須做 null / 0 / NaN 防護。
-- 回傳「無資料」的語意用 `null`（不是 `0`、不是 `-1`、不是 `''`）。
-- 展示層遇到 `null` 統一顯示 `'—'`，不顯示錯誤數字。
+- 任何從外部 API 來的欄位，一律透過 `lib/sources/util.ts` 的 `pick()` 做
+  大小寫不敏感查找（政府開放資料欄位命名常常不一致或跨版本改變）。
+- 數字欄位一律先 `Number(...)` / `parseFloat(...)` 再用 `Number.isFinite()`
+  檢查，NaN/undefined 一律視為「這筆資料不可信」，跳過該筆而不是硬塞入畫面。
+- 找不到地點座標時，用 `countyCentroid()` 退回縣市中心點，並在 UI 上以縣市
+  名稱標示（不要假裝有精確座標）。
 
-```js
-// ✅ price=0 代表「無報價」，不等於虧損 -100%
-const pnlPct = (hasPrice && totalCost > 0) ? (mktVal / totalCost - 1) * 100 : null;
+### 1.4 色彩與 UI 規則（見 dataviz 設計準則）
 
-// ❌ 未防護，導致 price=0 時顯示 -100%
-const pnlPct = (mktVal / totalCost - 1) * 100;
-```
-
-### 1.4 資料結構一致性
-
-- 每個核心資料結構必須有唯一的定義來源（Single Source of Truth）。
-- 變更資料結構時，同步更新 JSDoc、相關 utils 函式、測試的 `makeLot` / `makeItem` 工廠函式。
-
-目前核心資料結構：
-
-```js
-// WatchlistItem
-{ code, name, strategy, target, stopLoss, notes, lots[] }
-
-// Lot
-{ id, date, shares, oddLotShares, cost, note, trailingStopPct, planTarget, planStop }
-
-// Quote
-{ price, changePercent, volume, name, ... }
-```
+- 分類色相固定 8 個、依 `CATEGORY_ORDER` 順序分配，**不循環使用**；已經用滿
+  時，新類別不能硬塞一個新色相——改用複合編碼（形狀/圖示）或獨立於分類色盤
+  之外的呈現方式（例如電力燈號改用狀態色）。
+- 嚴重程度一律用固定的狀態色（灰/黃/橘/紅）＋ icon ＋ 文字三者同時呈現，不
+  單靠顏色傳達語意。
+- 新增 UI 前參考 `dataviz` skill 的色彩公式與檢查清單。
 
 ### 1.5 錯誤處理
 
-- API 呼叫一律用 `try/catch`，失敗時 `console.warn()`，不讓元件崩潰。
-- WebSocket 斷線有指數退避重連（`Math.min(2000 * 2^n, 30000)`）。
-- localStorage 讀寫一律透過 `ls.get` / `ls.set` 包裝，防止 JSON parse 錯誤。
-
-### 1.6 效能注意事項
-
-- 昂貴計算（聚合 K 線、布林通道、MA）用 `useMemo` 包裝，依賴陣列要精確。
-- WebSocket 推播的 `setQuotes` 使用 merge（`{ ...s.quotes, ...newQuotes }`），不整批替換。
-- REST fallback 輪詢間隔最短 20 秒，避免打爆 TWSE API。
+- 外部 API 呼叫一律 `try/catch` 包起來，失敗時退回示範資料並在 `SourceStatus`
+  標記 `ok:false`、附上 `error` 訊息，畫面上以「資料來源狀態」區塊顯示，不讓
+  單一來源掛掉造成整頁白畫面。
+- `lib/sources/util.ts` 的 `fetchJson` / `fetchText` 已內建 timeout（預設
+  10 秒）與 `AbortController`，新的 fetcher 一律透過這兩個 helper 呼叫外部
+  API，不要自己重寫 `fetch`。
 
 ---
 
-## 2. 測試的原則
+## 2. 測試與驗證的原則
 
-### 2.1 測試涵蓋範圍
+### 2.1 現況（誠實揭露，非理想狀態）
 
-**前端：**
-- `frontend/src/utils/` 下的每一個 exported 函式**都必須有對應測試**。
-- 新增函式 → 同一個 PR/commit 內必須附上測試，不能事後補。
-- UI 元件邏輯提取到 utils 後，測試寫在 utils 層，不寫元件整合測試（避免測試與實作緊耦合）。
-
-**後端：**
-- `backend/src/utils/` 下的每一個 exported 函式**都必須有對應測試**（與前端相同規則）。
-- Route handler 裡**禁止包含純計算邏輯**（損益計算、資料切片、條件判斷…）。有純計算就抽到 `backend/src/utils/`，再從 handler 呼叫，並補測試。
-- `services/` 裡含有純邏輯的 method（如 `AlertEngine.checkQuotes`、`_buildMessage`）也必須測試，測試放在 `backend/src/__tests__/`。
-- 後端測試執行方式：`cd backend && node --test src/__tests__/*.test.js`
-
-### 2.2 測試結構
-
-每個函式的測試遵循此結構：
-
-```
-describe('函式名稱', () => {
-  it('正常情況：描述期待行為',    () => { ... });
-  it('邊界情況：0、null、空陣列', () => { ... });
-  it('錯誤情況：非法輸入',        () => { ... });
-  it('【防迴歸】具體 bug 描述',   () => { ... }); // 曾發生過的 bug 必加
-});
-```
-
-### 2.3 防迴歸測試（必加）
-
-每次修復 bug，必須補一個描述該 bug 的測試，並在 `it()` 描述開頭加上 `【防迴歸】`：
-
-```js
-it('【防迴歸】price=0 → pnlPct 必須為 null，絕對不能是 -100', () => {
-  const { pnlPct } = calcPortfolio(item, 0);
-  expect(pnlPct).toBeNull();
-});
-```
-
-### 2.4 測試資料工廠
-
-使用工廠函式產生測試資料，保持測試簡潔且易維護：
-
-```js
-const makeLot = (overrides = {}) => ({
-  id: 'lot_1', date: '2024-01-01',
-  shares: 1, oddLotShares: 0, cost: 100, note: '',
-  ...overrides,
-});
-
-const makeItem = (lots, overrides = {}) => ({
-  code: '2330', name: '台積電', lots,
-  ...overrides,
-});
-```
-
-### 2.5 測試命名規範
-
-- `describe` 第一層：函式名稱（例：`calcPortfolio`）
-- `describe` 第二層（可選）：情境分組（例：`— 正常情況`、`— price=0 防迴歸`、`— 邊界情況`）
-- `it` 描述要說明**期待結果**，不說明實作細節
-
-```js
-// ✅ 描述期待結果
-it('現價為 0 時損益百分比回傳 null', () => { ... });
-
-// ❌ 描述實作細節
-it('hasPrice 為 false 時跳過計算', () => { ... });
-```
-
-### 2.6 執行測試
+目前專案**沒有安裝自動化單元測試框架**（沒有 Vitest/Jest），驗證方式是：
 
 ```bash
-# 前端測試（單次執行，CI / commit 前）
-cd frontend && npm test
-
-# 前端測試（監看模式，開發中）
-cd frontend && npm run test:watch
-
-# 後端測試
-cd backend && node --test src/__tests__/*.test.js
-
-# e2e（需先啟動 backend + frontend dev server）
-cd e2e && npx playwright test
+npx tsc --noEmit   # 型別檢查
+npm run lint       # eslint（flat config, ESLint 9 + Next 16）
+npm run build      # 確認可正式建置，且 /api/events 的 revalidate 設定正確
 ```
 
-**每次 commit 前，前端和後端測試都必須全數通過**（0 failed）。
+以及必要時用 Playwright 手動開瀏覽器截圖驗證（見 `verify` skill），檢查：
+- demo 資料在沒有任何金鑰/URL 時，8 個分類 + 電力燈號都正常渲染
+- light/dark mode 都正常
+- 分類篩選、地圖 marker、清單點選連動正常
 
-### 2.7 修改元件前先讀對應 e2e 測試
+### 2.2 技術債：補自動化測試
 
-改動 UI 元件前，先開對應的 e2e 測試確認測試依賴的 DOM 文字、role、placeholder 不受影響：
+`lib/sources/*.ts` 裡的**純邏輯部分**（例如 `earthquake.ts` 的
+`magnitudeToSeverity`、`airQuality.ts` 的 `aqiToSeverity`、`gridStatus.ts` 的
+`levelFromReserveRate`、`counties.ts` 的 `countyCentroid`）目前完全沒有測試
+覆蓋。這些函式輸入輸出明確、無副作用，是最適合優先補測試的對象。列在
+SPEC.md 的技術債分類，**尚未實作前，新增/修改這類函式時至少要手動驗證邊界值
+（0、負數、NaN、空字串、未知縣市名稱）**。
 
-| 元件 | e2e 測試檔 |
-|------|-----------|
-| Scanner.jsx | `e2e/tests/scanner.spec.js` |
-| Watchlist.jsx | `e2e/tests/watchlist.spec.js` |
-| Portfolio.jsx | `e2e/tests/portfolio.spec.js` |
-| Dashboard / App | `e2e/tests/dashboard.spec.js` |
+若之後要導入測試框架，建議 Vitest（與 Next.js/Vite 生態相容度高、設定簡單），
+測試放在 `lib/**/*.test.ts`，只測 `lib/` 底下的純函式，不做元件整合測試。
 
-### 2.8 React hook 宣告順序（TDZ 陷阱）
+### 2.3 每次 commit / PR 前必須確認
 
-`useCallback` / `useMemo` 的 dependency array 裡的所有變數，**必須在該 hook 宣告之前**就已定義。`npm run build`（Rollup）不觸發 TDZ 錯誤，但 `npm run dev`（Vite dev server）會導致元件 crash。
-
-```js
-// ❌ 錯誤：parsedCodes 在 useCallback 之後才宣告
-const runCompare = useCallback(() => {
-  parsedCodes.length  // TDZ 錯誤！
-}, [parsedCodes]);
-const parsedCodes = [...];
-
-// ✅ 正確：先宣告，再寫 useCallback
-const parsedCodes = [...];
-const runCompare = useCallback(() => {
-  parsedCodes.length  // OK
-}, [parsedCodes]);
+```
+□ npx tsc --noEmit 通過（0 error）
+□ npm run lint 通過（0 error，warning 需說明或修掉）
+□ npm run build 成功，且 /api/events 的 Revalidate 欄位符合預期
+□ 新增/修改的資料來源：至少手動 curl 過一次 /api/events，確認沒有 demoData
+  以外的例外（若沒有真實金鑰可測，至少確認 demo fallback 正常）
 ```
 
 ---
@@ -221,8 +123,6 @@ const runCompare = useCallback(() => {
 ## 3. 開發流程原則（Branch → Commit → PR）
 
 ### 3.0 完整開發流程（必須遵守）
-
-每一個需求（新功能、bug fix、重構）都必須走完以下流程，**禁止直接在 main 上開發**：
 
 ```
 1. 確認目前在 main，且 main 是最新的
@@ -233,217 +133,155 @@ const runCompare = useCallback(() => {
 
 3. 在 branch 上開發，分批 commit（每個 commit 一件事）
 
-4. 開發完畢，執行自我 review（見 3.5），**包含文件同步（Step 2.5），必須在同一 branch 補 commit**
+4. 開發完畢，執行自我 review（見 3.5），文件同步（Step 2.5）必須在同一 branch 補 commit
 
-5. 建立 PR（gh pr create），並等待 review 後 merge
+5. 建立 PR，並等待 review 後 merge
 
-6. 若 PR 開啟後有追加 commit，執行 Step 2.6 更新 PR title / description
+6. 若 PR 開啟後有追加 commit，同步更新 PR title / description
 ```
 
 **Branch 命名規則：**
 
-| Prefix     | 用途                         | 範例                              |
-| ---------- | ---------------------------- | --------------------------------- |
-| `feat/`    | 新功能                       | `feat/stockchart-bollinger-bands` |
-| `fix/`     | Bug 修正                     | `fix/dashboard-volume-display`    |
-| `refactor/`| 重構                         | `refactor/portfolio-utils-split`  |
-| `test/`    | 補測試                       | `test/portfolio-calc-coverage`    |
-| `docs/`    | 文件更新                     | `docs/agents-md-workflow`         |
-| `chore/`   | 依賴、工具、CI 等雜務        | `chore/update-vite-config`        |
+| Prefix      | 用途                     | 範例                              |
+| ----------- | ------------------------ | ---------------------------------- |
+| `feat/`     | 新功能（新資料來源/新 UI）| `feat/suspension-category`         |
+| `fix/`      | Bug 修正                  | `fix/flood-severity-mapping`       |
+| `refactor/` | 重構（不影響行為）        | `refactor/sources-shared-helper`   |
+| `docs/`     | 文件更新                  | `docs/bootstrap-spec-agents`       |
+| `chore/`    | 依賴、CI/CD、工具雜務     | `chore/bump-next-16`               |
 
----
+> ⚠️ **PR 一律開向 `main`**。若發現 `main` 上沒有你預期的最新內容（例如上一個
+> PR 已經被合併但本地分支還停在舊狀態），先 `git fetch origin main` 確認，
+> 再從 `origin/main` 重新分支，不要對著過期的 base 開 PR（過去發生過「PR head
+> 是 base 的祖先」導致 GitHub 拒絕建立 PR 的情況，見下方 3.6）。
 
 ### 3.5 PR 建立前的自我 Review 流程
-
-在執行 `gh pr create` **之前**，必須完成以下自我 review：
 
 #### Step 1：確認 diff 範圍合理
 
 ```bash
-git diff main...HEAD --stat          # 確認改動範圍符合需求
-git diff main...HEAD                 # 逐行確認沒有意外改動
+git fetch origin main
+git diff origin/main...HEAD --stat
+git diff origin/main...HEAD
 ```
 
 #### Step 2：逐項清單檢查
 
 ```
 □ 所有改動都是本次需求的範疇，沒有夾帶不相關的修改
-□ 沒有 console.log / debugger 遺留
-□ 沒有 TODO 尚未處理（或已標記在 SPEC.md / issue）
-□ 每一個修改過的計算邏輯，都能說明「改前有什麼問題、改後為什麼正確」
-□ 新函式有 JSDoc 說明（@param / @returns）
-□ npm test 通過（0 failed）
-□ npm run build 無 error
-□ SPEC.md 狀態已同步更新（若適用）
+□ 沒有 console.log 除錯碼遺留
+□ 新的資料來源函式遵循 1.1 的結構（demoData → 真實 API → try/catch fail()）
+□ npx tsc --noEmit / npm run lint / npm run build 全部通過
+□ SPEC.md 狀態已同步更新
 ```
 
 #### Step 2.5：文件同步檢查（每次 PR 必做）
 
-> ⛔ **這是硬性門檻，不是選填 checklist。**
-> `.md` 更新必須 commit 在**同一個 branch** 裡，與功能程式碼一起進 PR。
-> 不可以「先開 PR，事後再補文件」——那代表 PR 本身是不完整的。
-
-功能開發完畢後，在執行 `gh pr create` 之前，**必須逐一確認以下 4 個 .md 檔案**是否反映此次異動，並在同一個 branch 上 commit 更新：
+> ⛔ **硬性門檻**：`.md` 更新必須 commit 在**同一個 branch**，與功能程式碼
+> 一起進 PR，不可以「先開 PR、事後再補文件」。
 
 | 檔案 | 每次功能 PR 應確認的事項 |
 |------|------------------------|
-| **SPEC.md** | 對應功能項目是否已標記 `[x]`；若有新功能需求，是否已補充規格 |
-| **README.md** | 「功能特色」區塊是否反映新功能；指令、API 端點是否仍正確 |
-| **USER_MANUAL.md** | 新功能是否有對應的操作說明；截圖描述是否過時 |
-| **AGENTS.md** | 若有新的開發規範、技術棧或架構決策，是否已補充 |
+| **SPEC.md** | 對應功能項目是否已標記 `[x]`；有新需求是否已補規格 |
+| **README.md** | 資料來源表格、架構說明、已知限制是否反映新變更 |
+| **.env.example** | 新資料來源需要的環境變數是否已補上，含註解說明申請位置 |
+| **AGENTS.md** | 若有新的開發規範、色彩規則、架構決策，是否已補充 |
 
 **判斷要不要更新的原則：**
 
-- 新增了使用者可見的功能（新頁面、新按鈕、新欄位）→ **USER_MANUAL.md 必更新**
-- 新增 API endpoint 或改變呼叫方式 → **README.md 必更新**
+- 新增分類事件或狀態橫幅 → **README + .env.example 必更新**
+- 新增/調整 UI 顯示邏輯 → **README「架構」段落視情況更新**
 - 功能完成 → **SPEC.md 必標 `[x]`**
 - 只是內部重構或 bug fix（使用者感知不到）→ .md 可不更新，但 commit message 要說明
 
-#### Step 2.6：已開 PR 追加 commit 時，同步更新 PR title / description
+#### Step 3：針對這次 PR 的風險評估
 
-Push 新 commit 到**已開啟的 PR** 之後，必須立即執行。
+自問，任一題不確定就要補說明或先跟使用者確認：
 
-**⚠️ 在 Windows PowerShell 環境下，禁止用 `--body` 直接傳字串**（反引號會被 PowerShell 當跳脫字元，導致 ` ``` ` code block 變成亂碼）。
-
-**正確做法**：用 Write 工具把 description 寫成暫存 `_pr_body.md`，再用 `--body-file` 傳入，最後刪除暫存檔：
-
-```powershell
-# 1. 用 Write 工具建立 _pr_body.md（內容包含完整 markdown）
-# 2. 執行：
-gh pr create --title "標題" --body-file _pr_body.md
-# 或：
-gh pr edit <PR號碼> --title "新標題" --body-file _pr_body.md
-# 3. 刪除暫存檔：
-Remove-Item _pr_body.md
-```
-
-**PR description 原則**：目標是讓 reviewer 能看懂「做了什麼、為什麼、怎麼測、有沒有風險」。區塊視實際需要加減，**寧可多寫也不要漏掉重要資訊**。
-
-常用區塊（依需要取捨）：
-
-```
-## Summary
-- **功能名稱**：一句話說明做了什麼
-- 其他重點變更（測試、規範、文件）
-
-## 功能說明          ← 有新 UI / 流程時加，用表格列出各功能點
-## 測試明細          ← 有新增測試檔時加，列出檔案、測試數、涵蓋內容
-## Files Changed    ← 每個異動檔案一行說明做了什麼
-## How to Test      ← reviewer 要怎麼手動驗證，逐步操作說明
-## Known Issues     ← 已知限制、邊界 case、刻意不處理的 trade-off
-## TODO             ← 這支 PR 沒做但後續要跟進的事
-## Test             ← 自動測試結果（Frontend N passed ✅ / Backend N passed ✅）
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-```
-
-> `## Summary` 和 `## Files Changed` 是必填。其餘區塊有內容才加，沒有就省略，不要寫空區塊。
-
-PR description 必須反映 **目前 branch 上所有 commit 的累積狀態**，不是只描述最新一個 commit。具體來說：
-
-- 新增了修正（fix commit）→ 在 Summary 裡補一條，或新增 `## Fixes` 區塊
-- 新增了文件更新（docs commit）→ 在 Files Changed 表格裡補上 .md 欄位
-- 功能範圍有變化 → title 視情況更新
-
-**判斷是否需要更新：**
-執行 `git log main..HEAD --oneline` 後，如果 PR description 無法完整反映這些 commit 的改動，就必須更新。
-
-#### Step 3：針對這次 PR 的 bug 風險評估
-
-自問以下問題，**若任何一題答「不確定」，必須補測試或補說明**：
-
-1. 這個改動影響到哪些現有功能？有沒有可能意外破壞它們？
-2. 有沒有邊界情況（null / 0 / 空陣列 / 非交易時段）沒有處理到？
-3. 資料來源的格式假設（API 欄位名稱、單位）是否已驗證？
+1. 這個改動會不會讓某個分類事件在沒有金鑰時變成空白（漏掉 demo fallback）？
+2. 新的外部 API 欄位假設有沒有明確標註「未經真實端點驗證」？
+3. 是否影響到 `/api/events` 的 revalidate 快取行為？
 
 #### Step 4：撰寫 PR 描述
 
-PR 描述必須包含：
-
 ```markdown
-## 需求背景
-（一句話說明為什麼要做這個改動）
+## Summary
+- 做了什麼（列點）、為什麼
 
-## 改動摘要
-- 改了什麼（列點）
-- 為什麼這樣改
-
-## 測試方式
-- [ ] 手動測試步驟 1
-- [ ] 手動測試步驟 2
-- [ ] npm test 通過
+## Test plan
+- [x] npx tsc --noEmit
+- [x] npm run lint
+- [x] npm run build
+- [ ] 手動驗證步驟（demo 資料 / 真實資料）
 
 ## 已知風險 / 後續待辦
-（有的話列出來，沒有填「無」）
+（沒有就寫「無」）
 ```
+
+### 3.6 已知坑：main 分支與 PR 建立
+
+這個 repo 一開始沒有 `main` 分支，後續透過「先建立空的 main，再在其上重建內容」
+的方式補上，過程中踩過「PR head 是 base 的祖先」導致 GitHub 拒絕建立 PR 的坑
+（見 PR #1 的處理過程）。現在 `main` 已經是正常、完整的分支，**之後的開發不需
+要再處理這個問題**，只要固定「從最新的 `origin/main` 分支出去」即可。若某次
+`main` 上的 PR 已經被合併、而你本地的 designated branch 還停在被合併前的舊
+歷史，**重新從 `origin/main` 建立分支再套用你的 commit**（`git checkout -B
+<branch> origin/main` + `git cherry-pick <commit>`），不要對著過期分支硬開 PR。
 
 ---
 
-## 4. Commit Code 的原則（Branch 上的 commit）
+## 4. Commit 的原則
 
 ### 4.1 Commit 時機
 
-- 一個 commit 只做一件事（功能、修 bug、重構、測試各自分開）。
-- 功能與對應測試**可以放在同一個 commit**（鼓勵一起提交）。
+- 一個 commit 只做一件事。
 - 不 commit 未完成的半成品（除非用 `WIP:` 前綴明確標示）。
 
-### 4.2 Commit Message 格式
-
-採用 Conventional Commits 格式：
+### 4.2 Commit Message 格式（Conventional Commits）
 
 ```
-<type>(<scope>): <簡短說明（中文或英文）>
+<type>(<scope>): <簡短說明>
 
 [選填] 較詳細的說明，說明「為什麼」而非「做了什麼」
 ```
 
 **type 清單：**
 
-| type       | 用途                                       |
-| ---------- | ------------------------------------------ |
-| `feat`     | 新功能                                     |
-| `fix`      | 修 bug                                     |
-| `refactor` | 重構（不影響行為）                         |
-| `test`     | 新增或修改測試                             |
-| `perf`     | 效能優化                                   |
-| `style`    | 格式調整（不影響邏輯）                     |
-| `docs`     | 文件更新（README、SPEC.md、AGENTS.md）     |
-| `chore`    | 建置工具、依賴更新等雜務                   |
+| type       | 用途                                   |
+| ---------- | -------------------------------------- |
+| `feat`     | 新功能（新分類事件、新 UI）             |
+| `fix`      | 修 bug                                 |
+| `refactor` | 重構（不影響行為）                      |
+| `docs`     | 文件更新（README、SPEC.md、AGENTS.md）  |
+| `chore`    | 依賴、CI/CD、建置工具等雜務              |
 
-**scope 範例：** `portfolio`、`watchlist`、`stockchart`、`store`、`backend`、`ws`
+**scope 範例：** `earthquake`、`traffic`、`suspension`、`grid-status`、`api`、`ui`、`ci`
 
 ```bash
 # 範例
-feat(portfolio): 新增動態停損、R/R 比、部位規模計算函式
-test(portfolio): 補充 calcRR、calcPositionSize 等 34 個單元測試
-fix(watchlist): price=0 時不應顯示 -100% 損益
-refactor(portfolio): 將計算邏輯從 Watchlist.jsx 提取至 utils/portfolio.js
-feat(stockchart): 新增布林通道、成交量均線、週K/月K 聚合
+feat(suspension): 新增停班停課分類事件來源
+fix(flood): 水位站座標缺失時退回縣市中心點
+docs(spec): 標記停班停課、電力供需燈號為已完成
+chore(ci): 新增 GitHub Actions lint/typecheck/build workflow
 ```
 
 ### 4.3 commit 前檢查清單
 
 ```
-□ 前端：npm test 通過（0 failed）
-□ 後端：node --test src/__tests__/*.test.js 通過（0 failed）
-□ npm run build 無 error（warning 可接受）
-□ e2e：cd e2e && npx playwright test 通過（不可只靠 build 確認，見 2.7、2.8）
-□ 新功能有對應測試（前端 utils/ 函式 + 後端 utils/ 與 services/ 純邏輯）
-□ Route handler 內無 inline 純計算邏輯（已抽至 utils/）
-□ 新的 bug fix 有防迴歸測試
-□ 沒有 console.log 除錯碼遺留（console.warn 可接受）
-□ 沒有 hardcode 的 API key 或機密資訊
-□ SPEC.md 中對應功能的狀態已更新（若適用）
-□ 文件同步：README / USER_MANUAL / AGENTS 已在本 branch 更新（見 3.5 Step 2.5）——不可事後補，必須在同一 PR 內
+□ npx tsc --noEmit 通過
+□ npm run lint 通過
+□ npm run build 成功
+□ 沒有 console.log 除錯碼遺留
+□ 沒有 hardcode 的 API key（一律走 .env / .env.example 佔位）
+□ SPEC.md 對應功能狀態已更新
+□ README / .env.example 已在本 branch 更新（見 3.5 Step 2.5）
 ```
 
 ### 4.4 不應該 commit 的東西
 
-- `node_modules/`（已在 .gitignore）
-- `.env` 或含有 API key 的檔案
-- `dist/`（build 產物）
+- `node_modules/`、`.next/`、`*.tsbuildinfo`（已在 .gitignore）
+- `.env` / `.env.local` 或任何含真實 API key 的檔案
 - 暫時的測試用 `console.log`
-- 大量自動格式化造成的 whitespace diff（應獨立為 `style:` commit）
 
 ---
 
@@ -451,26 +289,21 @@ feat(stockchart): 新增布林通道、成交量均線、週K/月K 聚合
 
 ### 5.1 SPEC.md 的用途
 
-`SPEC.md` 是本系統的**功能規格書**，以一位專業股票交易員的視角定義系統應具備的功能。
-它是開發的「北極星」——決定下一步做什麼、什麼不做。
+`SPEC.md` 是本系統的**功能規格書與路線圖**，決定下一步做什麼、什麼不做。
 
 ### 5.2 優先級判讀規則
 
-SPEC.md 中的功能以 P0～P5 排序，判讀時遵循：
+| 優先級 | 意義                                         | 開發原則                     |
+| ------ | -------------------------------------------- | ----------------------------- |
+| P0     | 資料正確性 / 安全性相關，缺少會誤導使用者     | **必須最先處理**，不可跳過   |
+| P1     | 核心價值：更多災害/民生資料類別               | P0 完成後立即實作            |
+| P2     | 進階體驗（通知、更細的交通/民生資料）         | P1 穩定後排入                |
+| P3     | 長期使用價值（歷史紀錄、統計）                | 有餘力再做                   |
+| P4+    | 差異化 / 需要付費或不穩定外部資源             | 評估可行性後再決定           |
 
-| 優先級 | 意義                             | 開發原則                             |
-| ------ | -------------------------------- | ------------------------------------ |
-| P0     | 交易安全相關，缺少會造成損失     | **必須最先實作**，不可跳過           |
-| P1     | 技術分析核心功能                 | 在 P0 完成後立即實作                 |
-| P2     | 進階功能，提升使用效率           | P1 穩定後排入                        |
-| P3     | 錦上添花，有則更好               | 有餘力再做                           |
-| P4/P5  | 實驗性或需外部資源的功能         | 評估可行性後再決定                   |
-
-**禁止「跳著做」**：不可因為某個低優先級功能「比較有趣」就跳過高優先級功能。
+**禁止跳著做**：不可因為某個低優先級功能「比較有趣」就跳過高優先級項目。
 
 ### 5.3 標記功能狀態
-
-SPEC.md 中每個功能項目用以下標記標示狀態：
 
 ```
 - [ ] 待開發
@@ -479,74 +312,74 @@ SPEC.md 中每個功能項目用以下標記標示狀態：
 - [-] 已決定不做（附理由）
 ```
 
-每次功能完成後，**必須同步更新 SPEC.md 的狀態**，並在 commit message 中加入 `docs(spec): 標記 P0-1 動態停損為已完成`。
+每次功能完成，commit message 加入 `docs(spec): 標記 <項目> 為已完成`。
 
-### 5.4 新增功能到 SPEC.md
-
-新增功能規格時，需包含：
+### 5.4 新增功能到 SPEC.md 的格式
 
 ```markdown
-### Pn-序號: 功能名稱（中英文）
+#### N. 功能名稱 `[ ]`
 
-**使用者故事**：作為一個＿，我想要＿，這樣我可以＿
-
-**驗收標準**：
-- [ ] 具體可測試的條件 1
-- [ ] 具體可測試的條件 2
-
-**技術方案**：
-- 前端：影響哪些檔案、用什麼方法
-- 後端：是否需要新 API endpoint
-- 資料來源：TWSE / Yahoo Finance / 其他
-
-**優先級理由**：為什麼這個優先級？
+**背景**：為什麼需要（使用者痛點 / 資料缺口）
+**功能規格**：
+- 具體要做什麼（條列）
+- 涉及的檔案/模組
+**資料來源**：機關名稱 + API 是否需要金鑰 + 是否已驗證過真實端點
+**優先級理由**：為什麼是這個優先級
 ```
 
-### 5.5 判讀「做還是不做」的問題
+### 5.5 判讀「做還是不做」
 
-遇到 SPEC.md 沒寫、但使用者提出的功能，先問：
-
-1. **是否提升交易安全？** → 是，立即評估，視情況插隊到 P0
-2. **是否解決現有功能的 bug 或資料錯誤？** → 是，列為 hotfix，立即處理
-3. **是否在現有架構下可以快速實作（< 2hr）？** → 是，可插入目前迭代
-4. **是否需要付費 API 或複雜基礎設施？** → 記錄在 SPEC.md P4/P5，不立即實作
+1. **是否提升資料正確性 / 修正誤導性資訊？** → 是，立即評估，可插隊到 P0
+2. **是否解決現有功能的 bug？** → 是，列為 hotfix，立即處理
+3. **是否有穩定、免費、有文件的官方開放資料 API？** → 是，優先排入 P1/P2
+4. **是否只有非官方/不穩定資料來源（需靠新聞關鍵字過濾）？** → 依既有
+   `security`/`fire` 的模式實作，但必須在 UI 上明確標示「新聞快訊，非官方
+   個案資料」，不可包裝成官方統計
+5. **是否需要付費 API 或複雜基礎設施？** → 記錄在 SPEC.md P4+，先不做
 
 ### 5.6 資料來源評估準則
 
-優先使用免費且穩定的資料來源：
+| 優先級 | 來源類型 | 範例 |
+| ------ | -------- | ---- |
+| 1 | 有免費金鑰、文件完整、穩定多年的官方 API | 中央氣象署地震/天氣特報 |
+| 2 | 免金鑰但欄位/端點可能隨版本調整的官方開放資料 | 水利署水位、TDX 交通、停班停課、電力燈號 |
+| 3 | 沒有即時個案資料，改用新聞 RSS + 關鍵字過濾 | 治安快訊、火災快訊 |
+| 4 | 需要付費或審核較嚴格的 API | 記錄在 SPEC.md，評估成本後再做 |
 
-| 優先級 | 來源                              | 限制                         |
-| ------ | --------------------------------- | ---------------------------- |
-| 1      | TWSE 官方 API（mis.twse.com.tw）  | 僅台股，盤中限制頻率         |
-| 2      | TWSE openapi（openapi.twse.com.tw）| 每日盤後，資料較完整         |
-| 3      | Yahoo Finance v8（免費，無 key）  | 適合國際指數、匯率、商品     |
-| 4      | 需要 API key 的服務               | 記錄在 SPEC.md，評估成本後再做 |
+第 2 類來源**一律**要在程式裡用 `pick()` 做容錯欄位解析、try/catch 退回示範
+資料，並在 README 註明「端點請自行核對」。
 
 ---
 
 ## 附錄：專案技術棧速查
 
 ```
-前端：React 18 + Vite 5 + Zustand 4
-圖表：lightweight-charts v5（K線）、Recharts（報表）
-測試：Vitest + jsdom（npm test）
-後端：Node.js + Express + ws（WebSocket）
-資料：TWSE API（台股）、Yahoo Finance v8（國際）
-部署：Docker Compose（frontend + backend + nginx）
+框架：Next.js 16（App Router）+ React 19 + TypeScript 5
+樣式：Tailwind CSS 3
+地圖：react-leaflet 5 + OpenStreetMap（無需金鑰）
+資料抓取：SWR（前端輪詢）+ Next.js Route Handler revalidate（伺服器端 ISR 快取）
+RSS 解析：fast-xml-parser
+Lint：ESLint 9（flat config，eslint-config-next）
+測試：目前無自動化測試框架（見 2.1、2.2），驗證靠 tsc + eslint + build + 手動 Playwright
+CI：GitHub Actions（.github/workflows/ci.yml）— lint → typecheck → build
+部署：Vercel（原生 Git 整合，自動 Preview / Production）
 ```
 
 ## 附錄：常用指令
 
 ```bash
-# 前端開發
-cd frontend && npm run dev
+# 開發
+npm run dev
 
-# 前端測試（必須在 commit 前通過）
-cd frontend && npm test
+# 型別檢查
+npx tsc --noEmit
 
-# 後端開發
-cd backend && node src/index.js
+# Lint
+npm run lint
 
-# 完整啟動（Docker）
-docker-compose up --build
+# 正式建置（同時驗證 revalidate 設定）
+npm run build
+
+# 啟動正式版本（需先 build）
+npm run start
 ```
