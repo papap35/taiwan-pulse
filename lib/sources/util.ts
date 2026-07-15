@@ -1,5 +1,21 @@
 import { PulseEvent, SourceStatus, Category } from "@/lib/types";
 
+// Must match app/api/events/route.ts's `revalidate` export. Kept as one
+// constant instead of two separately-maintained numbers.
+//
+// This is NOT just a performance tweak: `cache: "no-store"` tells Next.js
+// "this fetch must never be cached," and per Next's documented behavior,
+// any such fetch reached during rendering opts the *entire route* out of
+// static generation into full per-request dynamic rendering — silently
+// overriding `export const revalidate` the moment a source actually calls
+// out to a real API (confirmed empirically: a route with every source
+// gated behind an unset env var stayed static+ISR at build time; making
+// just one source's fetch unconditional flipped the whole route to
+// dynamic). Using Next's own fetch cache (`next: { revalidate }`) instead
+// keeps each upstream call individually cached and revalidated, which is
+// what actually lets the route stay statically rendered with ISR.
+export const REVALIDATE_SECONDS = 120;
+
 export async function fetchJson<T>(
   url: string,
   init?: RequestInit,
@@ -11,7 +27,7 @@ export async function fetchJson<T>(
     const res = await fetch(url, {
       ...init,
       signal: controller.signal,
-      cache: "no-store",
+      next: { revalidate: REVALIDATE_SECONDS },
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
@@ -26,7 +42,10 @@ export async function fetchText(url: string, timeoutMs = 10000): Promise<string>
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      next: { revalidate: REVALIDATE_SECONDS },
+    });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
     }
