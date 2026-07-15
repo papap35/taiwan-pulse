@@ -63,6 +63,12 @@ P1/P2 項目的開發。
   完全不同），已更新為這個確認過的端點。回應內容的實際欄位名稱仍未經驗證，
   程式已加入對 TDX 常見的巢狀 `RoadEventLocation` 物件的容錯解析，但仍是
   盡力猜測，需要使用者部署後回報 `SourceStatusFooter` 是否顯示正常筆數。
+- 端點修好後使用者接著回報 `錯誤：((intermediate value) ?? []).map is not a
+  function`——代表 TDX 回應**不是裸陣列**，而是包了一層外殼物件（TDX 常見的
+  `{ RoadEvents: [...], UpdateTime: ..., ... }` envelope 模式）。已修正
+  `traffic.ts` 同時處理「回應本身就是陣列」與「回應是物件、真正的陣列包在
+  `RoadEvents`/`Data` 等常見鍵名底下」兩種情況，跟 `flood.ts`/`reservoir.ts`
+  處理 `records` 欄位的寫法一致。
 - 其餘欄位假設（水利署水位/水庫、停班停課、電力燈號的實際欄位名稱）仍待驗證。
 - **CDC 疫情監測**：使用者提供官方 OpenAPI 規格後確認 https://data.cdc.gov.tw/
   是標準 CKAN 系統，`epidemic.ts` 改成用 CKAN 文件化的
