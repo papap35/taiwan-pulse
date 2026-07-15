@@ -1,5 +1,5 @@
 import { PulseEvent, Severity } from "@/lib/types";
-import { fetchJson, ok, fail } from "./util";
+import { fetchJson, ok, fail, safeIso } from "./util";
 
 const NAME = "中央氣象署 - 顯著有感地震";
 
@@ -71,9 +71,11 @@ export async function fetchEarthquakes() {
           loc?.EpicenterLatitude && loc?.EpicenterLongitude
             ? { lat: loc.EpicenterLatitude, lng: loc.EpicenterLongitude, name: loc.Location }
             : undefined,
-        time: r.EarthquakeInfo?.OriginTime
-          ? new Date(r.EarthquakeInfo.OriginTime.replace(" ", "T") + "+08:00").toISOString()
-          : new Date().toISOString(),
+        time: safeIso(
+          r.EarthquakeInfo?.OriginTime
+            ? `${r.EarthquakeInfo.OriginTime.replace(" ", "T")}+08:00`
+            : undefined
+        ),
         source: NAME,
         sourceUrl: r.Web,
       };

@@ -1,6 +1,6 @@
 import { PulseEvent, Severity } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
-import { fetchJson, ok, fail, pick } from "./util";
+import { fetchJson, ok, fail, pick, safeIso } from "./util";
 
 const NAME = "環境部 - 空氣品質即時測站";
 
@@ -65,7 +65,7 @@ export async function fetchAirQuality() {
           Number.isFinite(lat) && Number.isFinite(lng)
             ? { lat, lng, name: siteName }
             : countyCentroid(county),
-        time: publishTime ? new Date(publishTime.replace(" ", "T") + "+08:00").toISOString() : new Date().toISOString(),
+        time: safeIso(publishTime ? `${publishTime.replace(" ", "T")}+08:00` : undefined),
         source: NAME,
       });
     }

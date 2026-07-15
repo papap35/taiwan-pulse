@@ -48,6 +48,27 @@ export function pick(obj: Record<string, unknown>, ...keys: string[]): unknown {
   return undefined;
 }
 
+// External date fields are never trustworthy — format drift, empty strings,
+// or a field rename can all produce an unparseable Date. new Date(x) doesn't
+// throw on its own, but .toISOString() on an Invalid Date does (RangeError:
+// Invalid time value), which — uncaught inside a per-record loop — has taken
+// down entire real-data batches in production, discarding otherwise-good
+// records for one bad date. Always go through this instead of
+// `new Date(x).toISOString()` directly.
+export function safeIso(value: string | undefined | null): string {
+  if (!value) return new Date().toISOString();
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
+// Same idea, for optional fields (e.g. validUntil) where "unknown" should
+// stay absent rather than default to "now".
+export function safeIsoOrUndefined(value: string | undefined | null): string | undefined {
+  if (!value) return undefined;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 export function ok(
   category: Category,
   name: string,

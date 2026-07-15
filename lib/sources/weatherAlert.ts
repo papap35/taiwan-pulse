@@ -1,6 +1,6 @@
 import { PulseEvent, Severity } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
-import { fetchJson, ok, fail } from "./util";
+import { fetchJson, ok, fail, safeIso, safeIsoOrUndefined } from "./util";
 
 const NAME = "中央氣象署 - 天氣特報";
 
@@ -79,12 +79,8 @@ export async function fetchWeatherAlerts() {
           severity: phenomenaToSeverity(phenomena),
           county: loc.locationName,
           location: countyCentroid(loc.locationName),
-          time: h.validTime?.startTime
-            ? new Date(h.validTime.startTime).toISOString()
-            : new Date().toISOString(),
-          validUntil: h.validTime?.endTime
-            ? new Date(h.validTime.endTime).toISOString()
-            : undefined,
+          time: safeIso(h.validTime?.startTime),
+          validUntil: safeIsoOrUndefined(h.validTime?.endTime),
           source: NAME,
         });
       }

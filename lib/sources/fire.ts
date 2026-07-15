@@ -1,7 +1,7 @@
 import { PulseEvent } from "@/lib/types";
 import { COUNTY_COORDS, countyCentroid } from "@/lib/counties";
 import { fetchAllFeeds, getFeedUrls } from "./newsRss";
-import { ok, fail } from "./util";
+import { ok, fail, safeIso } from "./util";
 
 const NAME = "新聞快訊（火災/森林火災關鍵字過濾）";
 
@@ -55,7 +55,7 @@ export async function fetchFireEvents() {
           severity: "warning" as const,
           county,
           location: countyCentroid(county),
-          time: it.pubDate ? new Date(it.pubDate).toISOString() : new Date().toISOString(),
+          time: safeIso(it.pubDate),
           source: NAME,
           sourceUrl: it.link,
         };
