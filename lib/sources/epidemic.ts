@@ -91,6 +91,37 @@ async function fetchViaCkanSearch(): Promise<Record<string, unknown>[]> {
   return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
 }
 
+// Untransformed upstream response, for /api/debug. More elaborate than the
+// other sources' raw fetchers since this one is two-step (search, then
+// fetch) — showing which CKAN package/resource got matched is as useful for
+// debugging as the records themselves.
+export async function fetchEpidemicRaw(): Promise<unknown> {
+  const manualUrl = process.env.CDC_EPIDEMIC_URL;
+  if (manualUrl) {
+    return fetchJson<unknown>(manualUrl);
+  }
+  const searchUrl = `${CDC_API_BASE}/action/package_search?q=${encodeURIComponent(SEARCH_QUERY)}`;
+  const search = await fetchJson<CkanSearchResponse>(searchUrl);
+  const pkg = search.result?.results?.[0];
+  if (!pkg) return { searchUrl, search };
+
+  const resource = pkg.resources?.find((r) => r.datastore_active) ?? pkg.resources?.[0];
+  if (!resource) return { searchUrl, matchedPackage: pkg.name, resources: pkg.resources };
+
+  if (resource.datastore_active) {
+    const dsUrl = `${CDC_API_BASE}/action/datastore_search?resource_id=${resource.id}&limit=20`;
+    const ds = await fetchJson<CkanDatastoreResponse>(dsUrl);
+    return {
+      searchUrl,
+      matchedPackage: pkg.name,
+      resourceId: resource.id,
+      dsUrl,
+      sampleRecords: ds.result?.records?.slice(0, 5),
+    };
+  }
+  return { searchUrl, matchedPackage: pkg.name, resourceUrl: resource.url };
+}
+
 export async function fetchEpidemic() {
   try {
     // CDC_EPIDEMIC_URL stays as a manual override: set it if you've already

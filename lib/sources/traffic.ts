@@ -63,6 +63,18 @@ function findCounty(text: string): string | undefined {
   return Object.keys(COUNTY_COORDS).find((c) => text.includes(c));
 }
 
+// Untransformed upstream response, for /api/debug — lets us see exactly
+// what TDX returns without guessing field names blind.
+export async function fetchTrafficRaw(): Promise<unknown> {
+  const clientId = process.env.TDX_CLIENT_ID;
+  const clientSecret = process.env.TDX_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error("TDX_CLIENT_ID / TDX_CLIENT_SECRET not configured");
+  }
+  const token = await getToken(clientId, clientSecret);
+  return fetchJson<unknown>(INCIDENT_URL, { headers: { Authorization: `Bearer ${token}` } });
+}
+
 export async function fetchTraffic() {
   const clientId = process.env.TDX_CLIENT_ID;
   const clientSecret = process.env.TDX_CLIENT_SECRET;

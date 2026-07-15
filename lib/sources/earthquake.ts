@@ -47,6 +47,16 @@ function demoData(): PulseEvent[] {
   ];
 }
 
+// Untransformed upstream response, for /api/debug.
+export async function fetchEarthquakeRaw(): Promise<unknown> {
+  const key = process.env.CWA_API_KEY;
+  if (!key) throw new Error("CWA_API_KEY not configured");
+  const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001?Authorization=${encodeURIComponent(
+    key
+  )}&format=JSON&limit=15`;
+  return fetchJson<unknown>(url);
+}
+
 export async function fetchEarthquakes() {
   const key = process.env.CWA_API_KEY;
   if (!key) {

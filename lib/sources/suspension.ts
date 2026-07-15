@@ -53,6 +53,13 @@ interface SuspensionResponse {
   data?: SuspensionRecord[];
 }
 
+// Untransformed upstream response, for /api/debug.
+export async function fetchSuspensionRaw(): Promise<unknown> {
+  const url = process.env.DGPA_SUSPENSION_URL;
+  if (!url) throw new Error("DGPA_SUSPENSION_URL not configured");
+  return fetchJson<unknown>(url);
+}
+
 export async function fetchSuspension() {
   const url = process.env.DGPA_SUSPENSION_URL;
   if (!url) {

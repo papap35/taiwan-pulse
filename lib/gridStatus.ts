@@ -29,6 +29,13 @@ const LEVEL_LABEL: Record<GridStatusLevel, string> = {
   critical: "限電準備",
 };
 
+// Untransformed upstream response, for /api/debug.
+export async function fetchGridStatusRaw(): Promise<unknown> {
+  const url = process.env.TAIPOWER_GRID_STATUS_URL;
+  if (!url) throw new Error("TAIPOWER_GRID_STATUS_URL not configured");
+  return fetchJson<unknown>(url);
+}
+
 export async function fetchGridStatus(): Promise<GridStatus> {
   const url = process.env.TAIPOWER_GRID_STATUS_URL;
   if (!url) {

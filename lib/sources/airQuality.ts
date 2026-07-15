@@ -32,6 +32,16 @@ interface MoenvResponse {
   records?: Record<string, unknown>[];
 }
 
+// Untransformed upstream response, for /api/debug.
+export async function fetchAirQualityRaw(): Promise<unknown> {
+  const key = process.env.MOENV_API_KEY;
+  if (!key) throw new Error("MOENV_API_KEY not configured");
+  const url = `https://data.moenv.gov.tw/api/v2/aqx_p_432?api_key=${encodeURIComponent(
+    key
+  )}&format=JSON&limit=200`;
+  return fetchJson<unknown>(url);
+}
+
 export async function fetchAirQuality() {
   const key = process.env.MOENV_API_KEY;
   if (!key) {

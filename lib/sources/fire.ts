@@ -28,6 +28,15 @@ function findCounty(text: string): string | undefined {
   return Object.keys(COUNTY_COORDS).find((c) => text.includes(c));
 }
 
+// Untransformed upstream response, for /api/debug — the unfiltered RSS
+// items, before keyword matching, so you can see what's actually in the
+// feed(s) and check whether the keyword list is missing real matches.
+export async function fetchFireRaw(): Promise<unknown> {
+  const feeds = getFeedUrls();
+  if (feeds.length === 0) throw new Error("NEWS_RSS_FEEDS not configured");
+  return fetchAllFeeds(feeds);
+}
+
 export async function fetchFireEvents() {
   const feeds = getFeedUrls();
   const extra = (process.env.FIRE_EXTRA_KEYWORDS ?? "")
