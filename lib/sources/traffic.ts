@@ -5,15 +5,13 @@ import { fetchJson, ok, fail, pick, safeIso } from "./util";
 const NAME = "TDX 運輸資料流通服務 - 國道事件";
 const TOKEN_URL =
   "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
-// TDX groups incident data by road authority. "國道事件" (national freeway
-// incidents, this source's intent) is managed by the Freeway Bureau, whose
-// TDX endpoint uses "Freeway" in the path — not "Highway", which returned a
-// confirmed 404 in production. Still an educated guess (based on TDX's
-// English naming convention, not a verified live response), override with
-// TDX_INCIDENT_URL if this is wrong too.
+// Confirmed correct by the user against TDX's live API (2026-07-15):
+// 高速公路道路事件資訊 = /v1/Traffic/RoadEvent/LiveEvent/Freeway — note this
+// is under v1, and under "RoadEvent/LiveEvent", not "Road/Traffic/Incident"
+// (both earlier guesses were wrong on both the version and the path shape).
 const INCIDENT_URL =
   process.env.TDX_INCIDENT_URL ??
-  "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/Incident/Freeway?%24format=JSON";
+  "https://tdx.transportdata.tw/api/basic/v1/Traffic/RoadEvent/LiveEvent/Freeway?%24format=JSON";
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
@@ -73,12 +71,33 @@ export async function fetchTraffic() {
       headers: { Authorization: `Bearer ${token}` },
     });
     const events: PulseEvent[] = (records ?? []).map((r, idx) => {
-      const road = String(pick(r, "RoadName", "roadname") ?? "國道");
-      const desc = String(pick(r, "Description", "description") ?? "交通事件");
-      const lat = Number(pick(r, "PositionLat", "positionlat"));
-      const lng = Number(pick(r, "PositionLon", "positionlon"));
-      const start = pick(r, "EventStartTime", "eventstarttime") as string | undefined;
-      const id = pick(r, "IncidentID", "incidentid");
+      // TDX's "RoadEvent" family commonly nests location under a sub-object
+      // (e.g. RoadEventLocation) rather than flat top-level fields — check
+      // both shapes since the exact schema for this endpoint is still
+      // unverified against a live response.
+      const nestedLocation =
+        (pick(r, "RoadEventLocation", "roadeventlocation") as Record<string, unknown>) ?? r;
+      const road = String(
+        pick(nestedLocation, "RoadName", "roadname") ?? pick(r, "RoadName", "roadname") ?? "國道"
+      );
+      const desc = String(
+        pick(r, "Description", "description", "RoadEventDescription") ?? "交通事件"
+      );
+      const lat = Number(
+        pick(nestedLocation, "PositionLat", "positionlat") ?? pick(r, "PositionLat", "positionlat")
+      );
+      const lng = Number(
+        pick(nestedLocation, "PositionLon", "positionlon") ?? pick(r, "PositionLon", "positionlon")
+      );
+      const start = pick(
+        r,
+        "RoadEventStartTime",
+        "roadeventstarttime",
+        "EventStartTime",
+        "eventstarttime",
+        "PublishTime"
+      ) as string | undefined;
+      const id = pick(r, "RoadEventID", "roadeventid", "IncidentID", "incidentid");
       return {
         id: `traffic-${id ?? idx}`,
         category: "traffic",

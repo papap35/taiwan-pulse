@@ -56,10 +56,13 @@ P1/P2 項目的開發。
   丟棄退回 demo。已修正為系統性問題：新增 `lib/sources/util.ts` 的
   `safeIso()` / `safeIsoOrUndefined()`，套用到全部 9 個來源＋電力燈號的日期
   解析，任何解析失敗都會安全退回目前時間，不會再讓一個壞欄位炸掉整批資料。
-- TDX 國道事件曾回報 `HTTP 404 Not Found`，確認 `Road/Traffic/Incident/Highway`
-  路徑錯誤，已改猜測為 `Road/Traffic/Incident/Freeway`（國道事件應該由國道
-  高速公路局的 Freeway 端點提供，而非公路總局的 Highway）。**這仍是未經即時
-  驗證的猜測**，需要使用者部署後回報是否還是 404。
+- TDX 國道事件曾回報 `HTTP 404 Not Found`，先猜測改成 `Road/Traffic/Incident/Freeway`
+  仍是錯的。**使用者實際查證 TDX API 後確認正確端點是
+  `/v1/Traffic/RoadEvent/LiveEvent/Freeway`**（注意是 v1、路徑結構是
+  `Traffic/RoadEvent/LiveEvent`，跟先前兩次猜測的 `Road/Traffic/Incident`
+  完全不同），已更新為這個確認過的端點。回應內容的實際欄位名稱仍未經驗證，
+  程式已加入對 TDX 常見的巢狀 `RoadEventLocation` 物件的容錯解析，但仍是
+  盡力猜測，需要使用者部署後回報 `SourceStatusFooter` 是否顯示正常筆數。
 - 其餘欄位假設（水利署水位/水庫、停班停課、電力燈號的實際欄位名稱）仍待驗證。
 
 ---
