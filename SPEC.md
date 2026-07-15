@@ -16,7 +16,7 @@
 | 電力供需燈號 | 台灣電力公司供電燈號，`TAIPOWER_GRID_STATUS_URL`，獨立橫幅非分類事件 | [x]（端點欄位未經真實驗證，見技術債） |
 | 地圖 + 事件列表 | react-leaflet + 篩選 + 嚴重程度分級，色彩配置符合 dataviz 準則 | [x] |
 | 示範資料退場機制 | 每個來源無金鑰/URL 時自動退回標示清楚的 demo 資料，並用 `DemoBadge` 顯眼標示（曾發生使用者誤以為 demo 資料是即時真實資料的情況） | [x] |
-| 自動更新機制 | `/api/events` 用 Next.js `revalidate=120` 做 ISR 快取，前端 SWR 輪詢 | [x] |
+| 自動更新機制 | `/api/events` 用 Next.js `revalidate=120` 做 ISR 快取，前端 SWR 輪詢 | [x]（曾因 `fetch` 用 `cache:"no-store"` 悄悄讓整個 route 變成非快取，已修正，見下方 P0-1） |
 | 事件時效性標示 | 每則事件顯示發布時間（絕對+相對）與來源；有官方效期的（天氣特報、停班停課）顯示「有效至」，過期/即將過期會有明顯警示；沒有官方效期的類別依類別設定「資料較舊」門檻 | [x] |
 | CI | GitHub Actions：lint → typecheck → build | [x] |
 | CD | Vercel 原生 Git 整合（Preview/Production 自動部署） | [x] |
@@ -64,6 +64,23 @@ P1/P2 項目的開發。
   程式已加入對 TDX 常見的巢狀 `RoadEventLocation` 物件的容錯解析，但仍是
   盡力猜測，需要使用者部署後回報 `SourceStatusFooter` 是否顯示正常筆數。
 - 其餘欄位假設（水利署水位/水庫、停班停課、電力燈號的實際欄位名稱）仍待驗證。
+- **CDC 疫情監測**：使用者提供官方 OpenAPI 規格後確認 https://data.cdc.gov.tw/
+  是標準 CKAN 系統，`epidemic.ts` 改成用 CKAN 文件化的
+  `package_search`／`datastore_search` 兩段式流程自動找資料，**預設直接啟用**，
+  不像其他來源需要先手動找網址填入。
+- **意外發現並修正一個影響所有來源的架構級 bug**：把 `epidemic.ts` 改成預設
+  啟用（不再需要先判斷有沒有設定網址才呼叫 fetch）之後，`next build` 把
+  `/api/events` 從 `○ Static, Revalidate 2m` 變成 `ƒ Dynamic`。追查後發現
+  `lib/sources/util.ts` 的 `fetchJson`/`fetchText` 用 `cache: "no-store"`
+  呼叫外部 API，而 Next.js 的規則是：**route 裡只要有一個 `no-store` 的
+  fetch 真的被執行到，整個 route 就會被判定為完全動態渲染，直接蓋掉
+  `export const revalidate` 設定**——這表示只要正式環境的金鑰都設定好、
+  來源真的會呼叫 fetch，`revalidate=120` 的 ISR 快取機制實際上早就悄悄失效，
+  只是在本機示範模式（不呼叫任何 fetch）看起來正常。已修正：改用
+  `next: { revalidate: REVALIDATE_SECONDS }` 取代 `cache: "no-store"`，
+  讓 Next.js 自己的 Data Cache 接手，經實測（暫時讓單一來源強制呼叫 fetch
+  來源、比對建置前後的 route 分類）確認修好後即使來源持續呼叫 fetch，
+  route 仍維持 `○ Static, Revalidate 2m`。
 
 ---
 
@@ -86,9 +103,17 @@ P1/P2 項目的開發。
   皆已支援），符合 AGENTS.md 1.4／dataviz 準則「第 9 個類別用複合編碼、不生成
   新色相」的原則
 
-**資料來源**：疾病管制署 https://data.cdc.gov.tw/，不需金鑰，但 `CDC_EPIDEMIC_URL`
-預設留空（沒有把握猜測正確的資料集網址，需使用者自行到網站找），比其他來源
-更明確地要求先確認端點才有真實資料
+**資料來源**：疾病管制署 https://data.cdc.gov.tw/，不需金鑰。
+
+**更新（使用者提供 CDC 官方 OpenAPI 規格後）**：確認 CDC 開放資料平台是標準
+CKAN 系統，`https://data.cdc.gov.tw/api/3` 是真實可用的 base URL，
+`/action/package_search`、`/action/datastore_search` 是 CKAN 本身文件化、
+穩定的標準 API（不是台灣政府自訂、需要用猜的）。因此 `lib/sources/epidemic.ts`
+改寫成兩段式流程：先用 `package_search?q=法定傳染病` 搜尋資料集，再用
+`datastore_search` 或資源本身的 `url` 取得實際資料，**預設直接啟用、不需要
+使用者先找網址填入**（跟 `CDC_EPIDEMIC_URL` 舊版行為不同）。`CDC_EPIDEMIC_URL`
+保留作為手動覆蓋選項。資料集裡實際的欄位名稱（病例數、縣市、疾病名稱等）
+仍是未驗證的猜測，屬於 P0-1 的一部分。
 **優先級理由**：公衛是明確的災害監控需求，且資料來源穩定（政府法定通報）
 
 #### 3. 水庫蓄水率 `[x]`
