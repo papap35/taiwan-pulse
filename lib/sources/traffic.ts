@@ -1,5 +1,5 @@
 import { PulseEvent, Severity } from "@/lib/types";
-import { countyCentroid } from "@/lib/counties";
+import { COUNTY_COORDS, countyCentroid } from "@/lib/counties";
 import { fetchJson, ok, fail, pick, safeIso } from "./util";
 
 const NAME = "TDX 運輸資料流通服務 - 國道事件";
@@ -59,6 +59,10 @@ function severityFromDescription(desc: string): Severity {
   return "info";
 }
 
+function findCounty(text: string): string | undefined {
+  return Object.keys(COUNTY_COORDS).find((c) => text.includes(c));
+}
+
 export async function fetchTraffic() {
   const clientId = process.env.TDX_CLIENT_ID;
   const clientSecret = process.env.TDX_CLIENT_SECRET;
@@ -91,11 +95,18 @@ export async function fetchTraffic() {
         })();
     const events: PulseEvent[] = records.map((r, idx) => {
       // TDX's "RoadEvent" family commonly nests location under a sub-object
-      // (e.g. RoadEventLocation) rather than flat top-level fields — check
-      // both shapes since the exact schema for this endpoint is still
-      // unverified against a live response.
-      const nestedLocation =
-        (pick(r, "RoadEventLocation", "roadeventlocation") as Record<string, unknown>) ?? r;
+      // rather than flat top-level fields, but the exact nesting key and
+      // field names for this specific endpoint are still unverified against
+      // a live response — try every plausible shape rather than one guess.
+      const nestedCandidates = ["Position", "position", "RoadEventLocation", "roadeventlocation", "Location", "location"];
+      let nestedLocation: Record<string, unknown> = r;
+      for (const key of nestedCandidates) {
+        const candidate = pick(r, key);
+        if (candidate && typeof candidate === "object") {
+          nestedLocation = candidate as Record<string, unknown>;
+          break;
+        }
+      }
       const road = String(
         pick(nestedLocation, "RoadName", "roadname") ?? pick(r, "RoadName", "roadname") ?? "國道"
       );
@@ -103,10 +114,12 @@ export async function fetchTraffic() {
         pick(r, "Description", "description", "RoadEventDescription") ?? "交通事件"
       );
       const lat = Number(
-        pick(nestedLocation, "PositionLat", "positionlat") ?? pick(r, "PositionLat", "positionlat")
+        pick(nestedLocation, "PositionLat", "positionlat", "Latitude", "latitude") ??
+          pick(r, "PositionLat", "positionlat", "Latitude", "latitude")
       );
       const lng = Number(
-        pick(nestedLocation, "PositionLon", "positionlon") ?? pick(r, "PositionLon", "positionlon")
+        pick(nestedLocation, "PositionLon", "positionlon", "Longitude", "longitude") ??
+          pick(r, "PositionLon", "positionlon", "Longitude", "longitude")
       );
       const start = pick(
         r,
@@ -117,12 +130,21 @@ export async function fetchTraffic() {
         "PublishTime"
       ) as string | undefined;
       const id = pick(r, "RoadEventID", "roadeventid", "IncidentID", "incidentid");
+      // Fall back to a county-level marker (parsed from the road name /
+      // description text) rather than no marker at all when precise
+      // coordinates can't be parsed — same pattern as fire.ts/security.ts.
+      const county = findCounty(`${road} ${desc}`);
+      const location =
+        Number.isFinite(lat) && Number.isFinite(lng)
+          ? { lat, lng, name: road }
+          : countyCentroid(county);
       return {
         id: `traffic-${id ?? idx}`,
         category: "traffic",
         title: `${road} - ${desc}`,
         severity: severityFromDescription(desc),
-        location: Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng, name: road } : undefined,
+        county,
+        location,
         time: safeIso(start),
         source: NAME,
       };

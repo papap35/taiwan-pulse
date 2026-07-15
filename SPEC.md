@@ -69,6 +69,14 @@ P1/P2 項目的開發。
   `traffic.ts` 同時處理「回應本身就是陣列」與「回應是物件、真正的陣列包在
   `RoadEvents`/`Data` 等常見鍵名底下」兩種情況，跟 `flood.ts`/`reservoir.ts`
   處理 `records` 欄位的寫法一致。
+- 端點與外殼物件都修好、API 抓得到資料後，使用者回報**地圖上完全沒有交通
+  事件的標記**。原因：`MapView` 只顯示有 `location`（經緯度）的事件，
+  `PositionLat`/`PositionLon`（含巢狀 `RoadEventLocation`）這組欄位猜測沒有
+  命中真實回應。已擴大巢狀物件候選鍵名（新增 `Position`、`Location`）與
+  欄位候選名稱（新增 `Latitude`/`Longitude`），並仿照 `fire.ts`/`security.ts`
+  加入文字比對縣市的退回機制——精確座標解析失敗時，改用道路名稱/描述文字
+  比對出的縣市中心點，至少讓地圖上看得到大概位置，而不是完全沒有標記。
+  精確欄位名稱仍未確認，若地圖仍然空白需要使用者提供一筆真實回應 JSON。
 - 其餘欄位假設（水利署水位/水庫、停班停課、電力燈號的實際欄位名稱）仍待驗證。
 - **CDC 疫情監測**：使用者提供官方 OpenAPI 規格後確認 https://data.cdc.gov.tw/
   是標準 CKAN 系統，`epidemic.ts` 改成用 CKAN 文件化的
