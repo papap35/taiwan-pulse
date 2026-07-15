@@ -8,7 +8,7 @@ export default function SourceStatusFooter({ sources }: { sources: SourceStatus[
       <summary className="cursor-pointer font-medium">資料來源狀態（{sources.length}）</summary>
       <ul className="mt-2 space-y-1">
         {sources.map((s) => (
-          <li key={s.category} className="flex flex-wrap items-center gap-2">
+          <li key={s.name} className="flex flex-wrap items-center gap-2">
             <span aria-hidden>{s.ok ? "✅" : "⚠️"}</span>
             <span className="font-medium">{s.name}</span>
             <span>{s.ok ? "正常" : "取用失敗"}</span>

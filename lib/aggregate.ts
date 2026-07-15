@@ -4,6 +4,7 @@ import { fetchWeatherAlerts } from "@/lib/sources/weatherAlert";
 import { fetchAirQuality } from "@/lib/sources/airQuality";
 import { fetchTraffic } from "@/lib/sources/traffic";
 import { fetchFlood } from "@/lib/sources/flood";
+import { fetchReservoirLevels } from "@/lib/sources/reservoir";
 import { fetchFireEvents } from "@/lib/sources/fire";
 import { fetchSecurityEvents } from "@/lib/sources/security";
 import { fetchSuspension } from "@/lib/sources/suspension";
@@ -17,6 +18,7 @@ export async function aggregateEvents(): Promise<EventsResponse> {
       fetchAirQuality(),
       fetchTraffic(),
       fetchFlood(),
+      fetchReservoirLevels(),
       fetchFireEvents(),
       fetchSecurityEvents(),
       fetchSuspension(),
