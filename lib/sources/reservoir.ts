@@ -1,6 +1,6 @@
 import { PulseEvent, Severity } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
-import { fetchJson, ok, fail, pick } from "./util";
+import { fetchJson, ok, fail, pick, safeIso } from "./util";
 
 // Folded into the existing "flood" category (水利大類) rather than a new
 // category — reservoir storage and river water level are both 水利署 data
@@ -69,7 +69,7 @@ export async function fetchReservoirLevels() {
           Number.isFinite(lat) && Number.isFinite(lng)
             ? { lat, lng, name: reservoirName }
             : countyCentroid(county),
-        time: time ? new Date(time).toISOString() : new Date().toISOString(),
+        time: safeIso(time),
         source: NAME,
       });
     }

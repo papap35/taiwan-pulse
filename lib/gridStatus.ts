@@ -1,5 +1,5 @@
 import { GridStatus, GridStatusLevel } from "@/lib/types";
-import { fetchJson, pick } from "@/lib/sources/util";
+import { fetchJson, pick, safeIso } from "@/lib/sources/util";
 
 const NAME = "台灣電力公司 - 電力供需即時燈號";
 
@@ -53,7 +53,7 @@ export async function fetchGridStatus(): Promise<GridStatus> {
       level,
       label: LEVEL_LABEL[level],
       detail: `備轉容量率 ${rate.toFixed(1)}%${noteText ? ` ・ ${noteText}` : ""}`,
-      updatedAt: updateTime ? new Date(updateTime.replace(" ", "T") + "+08:00").toISOString() : new Date().toISOString(),
+      updatedAt: safeIso(updateTime ? `${updateTime.replace(" ", "T")}+08:00` : undefined),
       source: NAME,
       isDemo: false,
       ok: true,

@@ -1,13 +1,19 @@
 import { PulseEvent, Severity } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
-import { fetchJson, ok, fail, pick } from "./util";
+import { fetchJson, ok, fail, pick, safeIso } from "./util";
 
 const NAME = "TDX 運輸資料流通服務 - 國道事件";
 const TOKEN_URL =
   "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
+// TDX groups incident data by road authority. "國道事件" (national freeway
+// incidents, this source's intent) is managed by the Freeway Bureau, whose
+// TDX endpoint uses "Freeway" in the path — not "Highway", which returned a
+// confirmed 404 in production. Still an educated guess (based on TDX's
+// English naming convention, not a verified live response), override with
+// TDX_INCIDENT_URL if this is wrong too.
 const INCIDENT_URL =
   process.env.TDX_INCIDENT_URL ??
-  "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/Incident/Highway?%24format=JSON";
+  "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/Incident/Freeway?%24format=JSON";
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
@@ -79,7 +85,7 @@ export async function fetchTraffic() {
         title: `${road} - ${desc}`,
         severity: severityFromDescription(desc),
         location: Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng, name: road } : undefined,
-        time: start ? new Date(start).toISOString() : new Date().toISOString(),
+        time: safeIso(start),
         source: NAME,
       };
     });

@@ -1,6 +1,6 @@
 import { PulseEvent } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
-import { fetchJson, ok, fail, pick } from "./util";
+import { fetchJson, ok, fail, pick, safeIso } from "./util";
 
 const NAME = "水利署 - 河川即時水位";
 
@@ -56,7 +56,7 @@ export async function fetchFlood() {
           Number.isFinite(lat) && Number.isFinite(lng)
             ? { lat, lng, name: stationName }
             : countyCentroid(county),
-        time: time ? new Date(time).toISOString() : new Date().toISOString(),
+        time: safeIso(time),
         source: NAME,
       });
     }

@@ -1,6 +1,6 @@
 import { PulseEvent, Severity } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
-import { fetchJson, ok, fail, pick } from "./util";
+import { fetchJson, ok, fail, pick, safeIso } from "./util";
 
 const NAME = "疾病管制署 - 法定傳染病監測";
 
@@ -67,7 +67,7 @@ export async function fetchEpidemic() {
         severity: monitor.severity,
         county,
         location: countyCentroid(county),
-        time: time ? new Date(time).toISOString() : new Date().toISOString(),
+        time: safeIso(time),
         source: NAME,
       });
     }
