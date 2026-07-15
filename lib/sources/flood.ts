@@ -21,6 +21,13 @@ function demoData(): PulseEvent[] {
   ];
 }
 
+// Untransformed upstream response, for /api/debug.
+export async function fetchFloodRaw(): Promise<unknown> {
+  const url = process.env.WRA_WATER_LEVEL_URL;
+  if (!url) throw new Error("WRA_WATER_LEVEL_URL not configured");
+  return fetchJson<unknown>(url);
+}
+
 export async function fetchFlood() {
   const url = process.env.WRA_WATER_LEVEL_URL;
   if (!url) {

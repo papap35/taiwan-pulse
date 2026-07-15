@@ -44,6 +44,14 @@ function findCounty(text: string): string | undefined {
   return Object.keys(COUNTY_COORDS).find((c) => text.includes(c));
 }
 
+// Untransformed upstream response, for /api/debug — see fire.ts's
+// fetchFireRaw for why this is the unfiltered feed items, not final events.
+export async function fetchSecurityRaw(): Promise<unknown> {
+  const feeds = getFeedUrls();
+  if (feeds.length === 0) throw new Error("NEWS_RSS_FEEDS not configured");
+  return fetchAllFeeds(feeds);
+}
+
 export async function fetchSecurityEvents() {
   const feeds = getFeedUrls();
   const extra = (process.env.SECURITY_EXTRA_KEYWORDS ?? "")

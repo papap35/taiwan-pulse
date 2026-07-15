@@ -33,6 +33,13 @@ function severityFromStoragePct(pct: number): Severity {
   return "warning"; // 20–30%
 }
 
+// Untransformed upstream response, for /api/debug.
+export async function fetchReservoirRaw(): Promise<unknown> {
+  const url = process.env.WRA_RESERVOIR_URL;
+  if (!url) throw new Error("WRA_RESERVOIR_URL not configured");
+  return fetchJson<unknown>(url);
+}
+
 export async function fetchReservoirLevels() {
   const url = process.env.WRA_RESERVOIR_URL;
   if (!url) {

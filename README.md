@@ -127,6 +127,29 @@ TDX 國道事件的**端點網址**已由使用者實測確認：
   （「15 分鐘前」）會隨著伺服器重新產生內容而一直重置，光看時間戳記無法判斷
   是不是真的即時資料，所以改成用醒目的標籤直接講明。
 
+## 除錯：查看原始 API 回應（`/api/debug`）
+
+所有資料抓取都在伺服器端執行（SSR），瀏覽器的開發者工具看不到打給 CWA／TDX／
+水利署等外部 API 的原始請求與回應。`/api/debug` 就是為了解決這個問題：
+
+```
+/api/debug                     → 列出所有可查詢的來源名稱
+/api/debug?source=traffic      → 回傳 TDX 國道事件「原始、未經任何欄位轉換」的回應
+/api/debug?source=flood        → 水利署河川水位的原始回應
+/api/debug?source=epidemic     → CDC 疫情監測（含實際比對到哪個 CKAN 資料集）
+```
+
+可用的 `source` 值：`earthquake`、`weather`、`air`、`traffic`、`flood`、
+`reservoir`、`fire`、`security`、`suspension`、`epidemic`、`gridStatus`。
+
+沒有設定對應金鑰/網址時會回傳 502 錯誤（例如 `TDX_CLIENT_ID / TDX_CLIENT_SECRET
+not configured`），這是預期行為，不是 bug。
+
+這是純除錯用途的端點，**刻意不快取**（每次都即時打外部 API，不像 `/api/events`
+有 ISR），也沒有加任何驗證/權限保護——回傳的都是政府公開資料本身，沒有夾帶
+金鑰內容，風險低，但如果之後想更嚴謹，可以考慮加上簡單的 query 參數密鑰或
+直接在正式環境移除這個路由。
+
 ## 架構
 
 - **Next.js 16 App Router**，`app/api/events/route.ts` 是唯一的後端聚合端點，
