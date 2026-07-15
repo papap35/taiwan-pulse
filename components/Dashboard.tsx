@@ -9,6 +9,7 @@ import CategoryBar from "./CategoryBar";
 import EventList from "./EventList";
 import Legend from "./Legend";
 import SourceStatusFooter from "./SourceStatusFooter";
+import GridStatusBanner from "./GridStatusBanner";
 
 const MapView = dynamic(() => import("./MapView"), {
   ssr: false,
@@ -49,6 +50,7 @@ export default function Dashboard() {
   return (
     <div className="flex h-screen flex-col bg-page-light dark:bg-page-dark">
       <Header generatedAt={data?.generatedAt} loading={isLoading} onRefresh={() => mutate()} />
+      <GridStatusBanner status={data?.gridStatus} />
       <CategoryBar events={events} active={active} onToggle={toggleCategory} />
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div className="min-h-[320px] flex-1 md:min-h-0">

@@ -14,7 +14,7 @@ export default function Header({
       <div>
         <h1 className="text-lg font-semibold sm:text-xl">Taiwan Pulse 台灣即時監控</h1>
         <p className="text-sm text-ink-secondary-light dark:text-ink-secondary-dark">
-          地震・天氣特報・空氣品質・交通・水利淹水・火災・治安快訊
+          地震・天氣特報・空氣品質・交通・水利淹水・火災・治安快訊・停班停課
         </p>
       </div>
       <div className="flex items-center gap-3 text-sm text-ink-secondary-light dark:text-ink-secondary-dark">
