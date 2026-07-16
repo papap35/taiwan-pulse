@@ -84,11 +84,12 @@ curl 打一次實際端點，確認欄位名稱與 `lib/sources/flood.ts`、
 資料集裡「病例數」「縣市」「疾病名稱」這些**欄位名稱**本身，如果解析不到符合
 的資料會保持顯示 0 筆或退回示範資料，見 SPEC.md P1-2 的更新說明。
 
-TDX 國道事件的**端點網址**已由使用者實測確認：
-`/v1/Traffic/RoadEvent/LiveEvent/Freeway`（`lib/sources/traffic.ts`）。但
-回應內容的**實際欄位名稱**仍未驗證，程式對 `RoadName`／`PositionLat`／
-`PositionLon` 等欄位做了多種常見命名的容錯比對（含 TDX 常見的巢狀
-`RoadEventLocation` 物件），仍可能需要依實際回應微調。
+TDX 國道事件的**端點網址與回應欄位**都已由使用者實測確認（透過 `/api/debug`
+取得真實回應）：端點是 `/v1/Traffic/RoadEvent/LiveEvent/Freeway`，座標欄位是
+`Positions`（WKT 字串 `POINT(lng lat)`，不是分開的 lat/lng 欄位），路名在
+`Location.FreeExpressHighway.Road`，嚴重程度文字在 `Impact.Description`，時間
+用 `PublishTime`/`EffectiveTime`，唯一 ID 是 `EventID`（`lib/sources/traffic.ts`）。
+舊的欄位名稱猜測仍保留作為 fallback，以防其他 TDX RoadEvent 子類型欄位不同。
 
 ### 為什麼「電力供需」不是分類事件，而是獨立橫幅？
 

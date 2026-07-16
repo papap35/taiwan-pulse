@@ -77,6 +77,19 @@ P1/P2 項目的開發。
   加入文字比對縣市的退回機制——精確座標解析失敗時，改用道路名稱/描述文字
   比對出的縣市中心點，至少讓地圖上看得到大概位置，而不是完全沒有標記。
   精確欄位名稱仍未確認，若地圖仍然空白需要使用者提供一筆真實回應 JSON。
+- **TDX 國道事件欄位已用真實回應確認、不再是猜測**：使用者用 `/api/debug?source=traffic`
+  取得一筆真實 `RoadEvent/LiveEvent/Freeway` 回應貼回，確認：座標欄位是
+  `Positions`，格式是 WKT 字串 `POINT(lng lat)`（不是先前猜測的
+  `PositionLat`/`PositionLon`）；路名在巢狀的 `Location.FreeExpressHighway.Road`；
+  真正代表嚴重程度的文字在 `Impact.Description`（比頂層 `Description` 更準確）；
+  時間應該用已經是完整 ISO＋時區的 `PublishTime`/`EffectiveTime`；唯一 ID 是
+  `EventID`。已改寫 `traffic.ts`：新增 `parseWktPoint()` 解析 WKT 座標、改讀
+  `Location.FreeExpressHighway.Road`、severity 判斷改吃 `Impact.Description`
+  （並擴充關鍵字涵蓋「部分阻斷」「全部阻斷」），舊的猜測欄位名稱保留作為
+  次要 fallback。另外用 `EventTitle`（例如「施工事件」）識別例行施工/養護
+  事件，這類事件即使回報「部分阻斷交通」也不應等同真實事故的嚴重度，會
+  降一級（`serious` → `warning`），避免地圖把排定的道路施工跟真的車禍事故
+  混為一談。
 - 其餘欄位假設（水利署水位/水庫、停班停課、電力燈號的實際欄位名稱）仍待驗證。
 - **CDC 疫情監測**：使用者提供官方 OpenAPI 規格後確認 https://data.cdc.gov.tw/
   是標準 CKAN 系統，`epidemic.ts` 改成用 CKAN 文件化的
