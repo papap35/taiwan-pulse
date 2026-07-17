@@ -20,6 +20,7 @@
 | 事件時效性標示 | 每則事件顯示發布時間（絕對+相對）與來源；有官方效期的（天氣特報、停班停課）顯示「有效至」，過期/即將過期會有明顯警示；沒有官方效期的類別依類別設定「資料較舊」門檻 | [x] |
 | CI | GitHub Actions：lint → typecheck → build | [x] |
 | CD | Vercel 原生 Git 整合（Preview/Production 自動部署） | [x] |
+| 漸進式資料載入 | 前端拆成每個分類各自打 `/api/events/[category]`，快的來源（如地震）不用等最慢的來源（交通，需先取 TDX OAuth token）才渲染 | [x] |
 
 ---
 
@@ -291,6 +292,44 @@ P1/P2 項目
 
 **技術方案**：比照 `AGENTS.md` 提到的指數退避模式，在 `fetchJson` 層或
 `traffic.ts` 內加上簡單重試（最多 2-3 次，指數退避）。
+
+### T4. 漸進式資料載入（拆分 `/api/events`）`[x]`
+
+**背景**：使用者發現原本的架構是前端單一 `useSWR("/api/events")`，後端在
+`lib/aggregate.ts` 用一個 `Promise.allSettled` 等全部 9 個分類（10 個
+fetcher）＋電力燈號都抓完才回傳一包 JSON——畫面必須等最慢的來源（交通事件，
+要先打 TDX OAuth token 再打實際 API，兩段式）才能整批渲染，快的來源（地震、
+天氣特報）無謂被拖慢。
+
+**評估過的方案與取捨**：
+- **SSE / streaming 單一連線**：體感也會變好，但 Next.js 的 streaming route
+  handler 必須是 `force-dynamic`，會讓每個使用者連線各自觸發真實 fetch，
+  等於繞過現有的 ISR 共用快取機制（`next: { revalidate: REVALIDATE_SECONDS }`），
+  流量一大就可能超過政府免費 API 的限制——這正是先前修過的架構級 bug
+  （見上方 P0-1 最後一條）想避免的情況，所以不採用。
+- **拆成每分類一支 route**（採用）：`/api/events/[category]` 重用既有
+  `fetchXxx()` 函式，每支各自套用同樣的 `revalidate = 120`，共用快取效益
+  完全不受影響；用 `generateStaticParams()` 預先產生全部 9 個分類的靜態
+  路徑，讓這個動態路由跟 `/api/events` 一樣是 `● SSG, Revalidate 2m`，
+  而不是每次請求都動態渲染。
+
+**實作**：
+- 新增 `lib/sourceRegistry.ts`：`CATEGORY_SOURCES`（分類→fetcher 陣列，
+  例如 `flood` 同時對應 `fetchFlood` 與 `fetchReservoirLevels`）與
+  `fetchCategory()`，作為「這個分類由哪些 fetcher 組成」的唯一真實來源，
+  `lib/aggregate.ts`（`/api/events` 保留，仍可用於需要單次拿到全部資料的
+  情境）與新路由共用同一份定義，避免兩處各自列一次、之後改分類漏改其中一處。
+- 新增 `app/api/events/[category]/route.ts`（各分類）與
+  `app/api/grid-status/route.ts`（電力燈號，原本併在 `/api/events` 裡）。
+- 前端 `components/Dashboard.tsx`：改用 `CategorySource` 子元件，每個分類
+  各自一個獨立的 `useSWR` 呼叫（放進獨立元件而不是在迴圈裡直接呼叫 hook，
+  才不違反 React Hooks 規則），資料到齊後回報給 `Dashboard` 合併、排序，
+  地圖與列表逐步補上標記；「立即更新」按鈕改用 SWR 的全域 `mutate()`
+  同時重新驗證全部 10 個 cache key。
+- 用 Playwright 檢查瀏覽器實際發出的請求，確認畫面載入後會平行打出 9 個
+  `/api/events/<category>` ＋ 1 個 `/api/grid-status`，不再是單一
+  `/api/events`；`next build` 確認 `/api/events/[category]` 顯示
+  `● SSG, Revalidate 2m`（跟 `/api/events` 一致），不是 `ƒ Dynamic`。
 
 ---
 

@@ -152,19 +152,51 @@ not configured`），這是預期行為，不是 bug。
 
 ## 架構
 
-- **Next.js 16 App Router**，`app/api/events/route.ts` 是唯一的後端聚合端點，
-  伺服器端平行呼叫全部 8 個分類資料來源（`Promise.allSettled`，單一來源失敗不
-  影響其他來源）＋ 1 個獨立的電力供需燈號。
+- **Next.js 16 App Router**。每個分類資料來源各自有一支
+  `app/api/events/[category]/route.ts` 端點，電力供需燈號則是獨立的
+  `app/api/grid-status/route.ts`——前端各自獨立輪詢，這是「漸進式載入」的
+  關鍵（見下方專節）。`app/api/events/route.ts`（不帶分類）仍保留作為
+  一次拿到全部資料的聚合端點，伺服器端平行呼叫全部 9 個分類資料來源
+  （`Promise.allSettled`，單一來源失敗不影響其他來源）＋ 1 個獨立的電力
+  供需燈號，適合需要單次快照的情境（例如手動 curl 檢查全站狀態）。
 - `lib/sources/*.ts`：各分類資料來源的 fetcher，統一輸出 `PulseEvent`（見
   `lib/types.ts`）；`lib/gridStatus.ts` 是電力供需燈號的 fetcher，輸出獨立的
   `GridStatus`，不計入分類事件。
-- `lib/aggregate.ts`：合併、排序、附上每個來源的狀態（成功/失敗/是否為示範資料）。
-- 前端 `components/Dashboard.tsx` 用 SWR 每 `NEXT_PUBLIC_REFRESH_MS`（預設 1 分鐘）
-  輪詢一次 `/api/events`，地圖（react-leaflet + OpenStreetMap）與列表共用同一份
-  篩選狀態；`GridStatusBanner` 顯示供需燈號。
-- 色彩配置：8 個分類事件各自固定一個色相（不循環使用，已用滿 8 色分類色盤），
-  嚴重程度另用四階固定的狀態色（灰／黃／橘／紅）並搭配圖示與文字，不單靠顏色
-  傳達資訊；電力供需燈號直接沿用狀態色，不佔用分類色相。
+- `lib/sourceRegistry.ts`：`CATEGORY_SOURCES`（分類 → fetcher 陣列的對照表，
+  例如 `flood` 分類同時對應 `fetchFlood` 與 `fetchReservoirLevels`）與
+  `fetchCategory()`，是「一個分類由哪些 fetcher 組成」的唯一定義來源，
+  `lib/aggregate.ts` 與 `/api/events/[category]` 都重用這份定義，避免兩處
+  各自列一次、之後改分類時漏改其中一處。
+- `lib/aggregate.ts`：呼叫 `fetchCategory()` 合併全部分類、排序、附上每個
+  來源的狀態（成功/失敗/是否為示範資料），供聚合端點使用。
+- 前端 `components/Dashboard.tsx` 對每個分類各自開一個 `useSWR`（放在獨立的
+  `CategorySource` 子元件裡，每個分類一個元件實例，不是在迴圈裡直接呼叫
+  hook），加上電力燈號自己的 `useSWR("/api/grid-status")`，每
+  `NEXT_PUBLIC_REFRESH_MS`（預設 1 分鐘）各自輪詢一次；地圖
+  （react-leaflet + OpenStreetMap）與列表共用同一份合併後的篩選狀態；
+  `GridStatusBanner` 顯示供需燈號。
+- 色彩配置：8 個分類事件各自固定一個色相（不循環使用，已用滿 8 色分類色盤，
+  第 9 個類別疫情監測用複合編碼共用色相），嚴重程度另用四階固定的狀態色
+  （灰／黃／橘／紅）並搭配圖示與文字，不單靠顏色傳達資訊；電力供需燈號直接
+  沿用狀態色，不佔用分類色相。
+
+### 漸進式載入資料來源
+
+早期版本前端只打一支聚合端點 `/api/events`，後端等全部 9 個分類（含 10 個
+fetcher）＋電力燈號都抓完才回傳一整包 JSON——畫面必須等最慢的來源（交通
+事件，要先取得 TDX OAuth token 再打實際 API，屬於兩段式請求）才能整批
+渲染，地震、天氣特報這類本來很快的來源也被無謂拖慢。
+
+改成前端對每個分類各自呼叫 `/api/events/[category]`（見上方架構說明），
+快的來源先渲染，不用等最慢的那個。之所以不用 SSE/streaming 單一連線改善
+體感，是因為 Next.js 的 streaming route handler 必須宣告
+`export const dynamic = "force-dynamic"`，會讓每個使用者連線各自觸發真實
+fetch，等於繞過現有 ISR 共用快取（下面「自動更新機制」一節），流量一大就
+可能超過政府免費 API 的流量限制——這正是先前修過的架構級 bug（`cache:
+"no-store"` 悄悄讓整個 route 變成非快取）想避免的情況。拆成多支各自
+`revalidate = 120` 的 route，並用 `generateStaticParams()` 預先產生全部
+9 個分類的靜態路徑，讓 `/api/events/[category]` 跟 `/api/events` 一樣是
+`● SSG, Revalidate 2m`，共用快取效益完全不受影響。
 
 ### 自動更新機制
 
