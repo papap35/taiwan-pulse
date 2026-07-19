@@ -43,7 +43,16 @@ async function fetchWithRetry(
       if (res.ok || !RETRYABLE_STATUS.has(res.status)) return res;
       lastError = new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
     } catch (err) {
-      lastError = err;
+      // A thrown error here means the request never got an HTTP response at
+      // all — a timeout (our own AbortController firing), DNS failure, or
+      // connection drop. Retrying with the same timeout budget doesn't fix
+      // "the server didn't respond in time," it just multiplies the wait
+      // (confirmed in production: a slow CKAN search compounded across
+      // retries until something upstream aborted the whole request first).
+      // Only HTTP-status-based retries above are safe to compound; fail
+      // fast here instead.
+      clearTimeout(timer);
+      throw err;
     } finally {
       clearTimeout(timer);
     }

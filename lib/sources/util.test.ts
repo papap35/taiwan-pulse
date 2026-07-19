@@ -133,6 +133,14 @@ describe("fetchJson 重試邏輯", () => {
     await expect(fetchJson("https://example.com/data")).rejects.toThrow("HTTP 404");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("【防迴歸】CDC 疫情監測曾回報 'This operation was aborted'——逾時／連線層級錯誤（fetch 直接 reject，不是回傳 HTTP 狀態碼）不應重試，避免多次重試把已經很慢的請求拖得更久", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new DOMException("This operation was aborted", "AbortError"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchJson("https://example.com/data")).rejects.toThrow("aborted");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("parseNum", () => {
