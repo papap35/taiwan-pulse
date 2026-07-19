@@ -175,6 +175,10 @@ TDX 國道事件的**端點網址與回應欄位**都已由使用者實測確認
 可用的 `source` 值：`earthquake`、`weather`、`air`、`traffic`、`flood`、
 `reservoir`、`fire`、`security`、`suspension`、`epidemic`、`gridStatus`。
 
+畫面右下角「資料來源狀態」清單裡，每個來源都直接附了「查看原始回應」連結
+（`components/SourceStatusFooter.tsx`），對應到這裡的 `source` 值，不用自己
+組網址。
+
 沒有設定對應金鑰/網址時會回傳 502 錯誤（例如 `TDX_CLIENT_ID / TDX_CLIENT_SECRET
 not configured`），這是預期行為，不是 bug。
 

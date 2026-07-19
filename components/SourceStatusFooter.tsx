@@ -1,5 +1,28 @@
-import { SourceStatus } from "@/lib/types";
+import { Category, SourceStatus } from "@/lib/types";
 import { relativeTime } from "@/lib/time";
+
+// Maps a source's category to its /api/debug?source=<key> key (see
+// app/api/debug/route.ts's SOURCES map). Almost 1:1 with Category, except
+// "flood" covers two distinct debug sources (river water level + reservoir,
+// see lib/sourceRegistry.ts) — disambiguated by name below since there's no
+// separate field carrying this on SourceStatus itself.
+const CATEGORY_DEBUG_KEY: Partial<Record<Category, string>> = {
+  earthquake: "earthquake",
+  weather: "weather",
+  air: "air",
+  traffic: "traffic",
+  fire: "fire",
+  security: "security",
+  suspension: "suspension",
+  epidemic: "epidemic",
+};
+
+function debugKeyFor(status: SourceStatus): string {
+  if (status.category === "flood") {
+    return status.name.includes("水庫") ? "reservoir" : "flood";
+  }
+  return CATEGORY_DEBUG_KEY[status.category] ?? status.category;
+}
 
 export default function SourceStatusFooter({ sources }: { sources: SourceStatus[] }) {
   if (sources.length === 0) return null;
@@ -16,6 +39,14 @@ export default function SourceStatusFooter({ sources }: { sources: SourceStatus[
             <span>{s.count} 筆</span>
             <span>更新於 {relativeTime(s.fetchedAt)}</span>
             {s.error && <span className="text-status-critical">錯誤：{s.error}</span>}
+            <a
+              href={`/api/debug?source=${debugKeyFor(s)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-dotted underline-offset-2 hover:text-ink-primary-light dark:hover:text-ink-primary-dark"
+            >
+              查看原始回應
+            </a>
           </li>
         ))}
       </ul>
