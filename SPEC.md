@@ -91,20 +91,28 @@ P1/P2 項目的開發。
   事件，這類事件即使回報「部分阻斷交通」也不應等同真實事故的嚴重度，會
   降一級（`serious` → `warning`），避免地圖把排定的道路施工跟真的車禍事故
   混為一談。
-- **水利署水位/水庫端點**：使用者部署後回報兩者皆 `HTTP 503 Service Unavailable`
-  （不是 404，代表網域本身可達，但這個路徑可能是錯的，或該端點暫時不可用）。
-  AI agent 沙盒對 `fhy.wra.gov.tw`／`opendata.wra.gov.tw` 的請求會被擋（沙盒
-  網路政策）或收到 WAF 403（透過 WebFetch 測試也一樣，但跟使用者實際收到的
-  503 是不同的錯誤——代表 WRA 的伺服器對不同來源的請求可能有不同的處理方式，
-  沙盒與正式環境測不出同一個結果）。查閱網路上其他人介接同一組 API 的公開
-  範例後，`WRA_WATER_LEVEL_URL` 原本猜的 `.../Water/RealTimeWaterLevel` 這個
-  路徑名稱在任何參考資料裡都找不到，比較接近的命名慣例是 `RealTimeInfo`，
-  已改為 `.../Water/RealTimeInfo`；`WRA_RESERVOIR_URL` 路徑本身已經接近
-  （只差大小寫），一併修正大小寫為 `.../Reservoir/RealTimeInfo`。**這兩個
-  修正都還沒有真實回應驗證過**，503 可能是路徑錯誤、也可能是暫時性的伺服器
-  問題、或是 WRA 的 WAF 特別擋掉雲端服務商（例如 Vercel）的 IP——這三種情況
-  無法從目前的環境分辨，需要使用者重新部署後回報 `/api/debug?source=flood`／
-  `?source=reservoir` 的實際結果才能繼續往下修正。
+- **水利署水位/水庫端點**：使用者部署後回報兩者皆 `HTTP 503 Service
+  Unavailable`。查閱網路上其他人介接同一組 API 的參考資料後，第一輪先把
+  `fhy.wra.gov.tw/WraApi/v1/...` 的路徑名稱改成看起來更接近的猜測
+  （`RealTimeInfo`），但使用者重新部署後回報**水位端點變成 `fetch failed`
+  （連線層級失敗，連 HTTP 狀態碼都拿不到），水庫端點仍是 503**——這代表
+  問題不是路徑名稱猜錯而已，`fhy.wra.gov.tw` 這個網域本身可能就不是對的：
+  進一步查證後發現它其實是水利署「防災資訊服務網」給人看的網站後端，不是
+  設計給第三方程式輪詢的公開 API；水利署真正的開放資料入口是另一個網域
+  `opendata.wra.gov.tw`，API 結構也完全不同——不是一個固定路徑回傳全台
+  陣列，而是**每個資料集各自對應一組資源 ID**，網址是
+  `opendata.wra.gov.tw/api/v2/{resource-id}`（CKAN 風格，同一個模式也支援
+  `format=CSV`/`XML`/`JSON`）。**使用者直接在瀏覽器找到正確的資源 ID 貼給
+  我**：即時水位是 `73c4c3de-4045-4765-abeb-89f9f9cd5ff0`、水庫水情是
+  `2be9044c-6e44-4856-aad5-dd108c2e6679`，已更新 `.env.example` 兩個網址的
+  網域與路徑為這組確認過的正確位置。**網域＋路徑已確認正確，但 JSON 實際
+  欄位名稱仍未驗證**（`opendata.wra.gov.tw` 整個網域對 AI agent 沙盒與
+  WebFetch 測試工具都回傳 403，無法直接取得真實回應內容）——`flood.ts`／
+  `reservoir.ts` 的欄位解析維持原本的 `pick()` 多重候選猜測不變，另外加寬了
+  envelope 拆解邏輯（新增 `result.records` 巢狀陣列的容錯，比照 CKAN 常見
+  外殼格式）。如果部署後這兩個來源仍是 0 筆或示範資料，麻煩貼一次
+  `/api/debug?source=flood`／`?source=reservoir` 的實際回應，才能像 TDX
+  那次一樣一次修對欄位名稱。
 - **順便補上的通用韌性**：無論上面的路徑是否修對，503/502/504 這類閘道層
   暫時性錯誤原本會直接被當成永久失敗、立刻退回示範資料。`lib/sources/util.ts`
   的 `fetchJson`/`fetchText` 現在會對這三種狀態碼自動重試（最多 2 次、

@@ -35,10 +35,19 @@ export async function fetchFlood() {
   }
   try {
     const raw = await fetchJson<unknown>(url);
+    // opendata.wra.gov.tw's /api/v2/{resource-id} endpoints (confirmed
+    // correct domain+path by the user, replacing the earlier fhy.wra.gov.tw
+    // guess that returned 503/connection failures) are CKAN-like, so the
+    // array may come back bare, under "records", or nested under
+    // "result.records" depending on which shape this particular resource
+    // uses — schema itself is still unconfirmed, see SPEC.md P0-1.
+    const nestedRecords = (raw as { result?: { records?: unknown[] } })?.result?.records;
     const records: Record<string, unknown>[] = Array.isArray(raw)
       ? (raw as Record<string, unknown>[])
       : Array.isArray((raw as { records?: unknown[] })?.records)
-      ? ((raw as { records: Record<string, unknown>[] }).records)
+      ? (raw as { records: Record<string, unknown>[] }).records
+      : Array.isArray(nestedRecords)
+      ? (nestedRecords as Record<string, unknown>[])
       : [];
 
     const events: PulseEvent[] = [];
