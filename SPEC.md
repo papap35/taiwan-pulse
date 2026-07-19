@@ -401,6 +401,19 @@ TDX 用，所有來源都可能遇到暫時性閘道錯誤。**尚未完成**：
 token 取得流程本身也還沒有獨立的重試保護（目前只有實際資料 API 呼叫走
 `fetchJson`，token 呼叫是直接 `fetch`，見 `traffic.ts` 的 `getToken()`）。
 
+**修正一個這個重試機制自己造成的 bug**：使用者回報 CDC 疫情監測錯誤
+`This operation was aborted`。追查後發現 `fetchWithRetry()` 原本的
+`catch (err) { lastError = err }` 會攔截**任何**拋出的例外——包括我們自己
+的逾時 `AbortController` 觸發的 `AbortError`——然後照樣重試，不是只重試
+502/503/504 這幾個 HTTP 狀態碼。`epidemic.ts` 的 CKAN 流程是兩段式循序呼叫
+（先 `package_search` 再 `datastore_search`），每段呼叫本身變慢時，逾時後
+不但沒有直接失敗，反而觸發最多 2 次重試（每次還是用同樣 10 秒逾時），兩段
+相乘下來最壞情況要等將近一分鐘，遠超過任何上層（Vercel serverless
+function、或呼叫方自己的逾時）願意等待的時間，最終被外層直接中止，也就是
+使用者看到的 `This operation was aborted`。已修正：逾時／連線層級的例外
+現在會直接拋出、不再重試（重試同樣的逾時時間沒有意義，只會讓本來就慢的
+請求更慢），只有真正拿到 HTTP 502/503/504 回應時才重試。
+
 ### T4. 漸進式資料載入（拆分 `/api/events`）`[x]`
 
 **背景**：使用者發現原本的架構是前端單一 `useSWR("/api/events")`，後端在
