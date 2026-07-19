@@ -1,18 +1,31 @@
 import { PulseEvent, Severity } from "@/lib/types";
-import { countyCentroid } from "@/lib/counties";
+import { COUNTY_COORDS, countyCentroid } from "@/lib/counties";
 import { endOfTaiwanDay } from "@/lib/freshness";
-import { fetchJson, ok, fail, pick } from "./util";
+import { fetchRssItems } from "./newsRss";
+import { ok, fail, safeIso } from "./util";
 
-const NAME = "人事行政總處 - 天然災害停止上班上課";
+const NAME = "國家災害防救科技中心 - 天然災害停止上班及上課";
+// The original guess (www.dgpa.gov.tw/typh/opendata/open.json) returned
+// HTTP 404 in production and turned out to never have existed — the only
+// real integration found for this data was HTML-table scraping of
+// dgpa.gov.tw's public query page, not a JSON feed. The user found NCDR
+// (國家災害防救科技中心) publishes the same official announcements as an
+// RSS/Atom feed instead; AlertType=33 is the 停班停課 category.
+const FEED_URL =
+  process.env.NCDR_SUSPENSION_URL ??
+  "https://alerts.ncdr.nat.gov.tw/RssAtomFeed.ashx?AlertType=33";
 
-// Status codes used by DGPA's feed: 0 normal, 1 停止上班停止上課,
-// 2 停止上班上課(部分), 3 上班上課(視情況調整) — codes vary by release, so we
-// treat anything containing "停止上班" / "停止上課" in the text as newsworthy
-// regardless of the numeric code, to stay resilient to schema drift.
+// Status codes used by DGPA's original feed varied by release, so this
+// matches on the announcement text itself ("停止上班"/"停止上課") rather than
+// a numeric code, to stay resilient regardless of which upstream produces it.
 export function severityFromText(text: string): Severity {
   if (/停止上班.*停止上課|停班停課/.test(text)) return "serious";
   if (/停止上班|停止上課/.test(text)) return "warning";
   return "info";
+}
+
+function findCounty(text: string): string | undefined {
+  return Object.keys(COUNTY_COORDS).find((c) => text.includes(c));
 }
 
 function demoData(): PulseEvent[] {
@@ -45,49 +58,36 @@ function demoData(): PulseEvent[] {
   ];
 }
 
-interface SuspensionRecord {
-  [key: string]: unknown;
-}
-
-interface SuspensionResponse {
-  data?: SuspensionRecord[];
-}
-
-// Untransformed upstream response, for /api/debug.
+// Untransformed upstream response, for /api/debug — the parsed RSS items
+// before keyword/severity filtering.
 export async function fetchSuspensionRaw(): Promise<unknown> {
-  const url = process.env.DGPA_SUSPENSION_URL;
-  if (!url) throw new Error("DGPA_SUSPENSION_URL not configured");
-  return fetchJson<unknown>(url);
+  return fetchRssItems(FEED_URL);
 }
 
 export async function fetchSuspension() {
-  const url = process.env.DGPA_SUSPENSION_URL;
-  if (!url) {
-    return ok("suspension", NAME, demoData(), true);
-  }
   try {
-    const raw = await fetchJson<SuspensionResponse | SuspensionRecord[]>(url);
-    const records: SuspensionRecord[] = Array.isArray(raw) ? raw : raw.data ?? [];
+    const items = await fetchRssItems(FEED_URL);
     const events: PulseEvent[] = [];
-    for (const r of records) {
-      const county = String(pick(r, "county", "cityname", "COUNTY") ?? "");
-      const statusText = String(
-        pick(r, "statusname", "status_name", "content", "description") ?? ""
-      );
-      if (!statusText || /^(上班|上課|正常)/.test(statusText)) continue; // skip "normal" entries
-      const town = pick(r, "town", "townname") as string | undefined;
+    for (const it of items) {
+      const text = `${it.title} ${it.description ?? ""}`;
+      const severity = severityFromText(text);
+      if (severity === "info") continue; // feed noise / non-suspension entries
+      const county = findCounty(text);
       events.push({
-        id: `suspension-${county}-${town ?? ""}-${statusText}`,
+        id: `suspension-${it.link ?? `${it.title}-${it.pubDate ?? ""}`}`,
         category: "suspension",
-        title: `${county}${town ? town : ""} ${statusText}`,
-        severity: severityFromText(statusText),
+        title: it.title,
+        description: it.description,
+        severity,
         county,
         location: countyCentroid(county),
-        time: new Date().toISOString(),
-        // DGPA 公告慣例上以「當日」為單位，官方 feed 本身未提供明確的結束時間，
-        // 這裡假設有效期到台灣當日 23:59:59，隔天公告會被新的一筆取代。
+        time: safeIso(it.pubDate),
+        // NCDR's feed doesn't carry an explicit expiry either — same
+        // convention as before: assume validity through end of the Taiwan
+        // calendar day, replaced by the next day's announcement.
         validUntil: endOfTaiwanDay(),
         source: NAME,
+        sourceUrl: it.link,
       });
     }
     return ok("suspension", NAME, events, false);
