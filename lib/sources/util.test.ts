@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { pick, safeIso, safeIsoOrUndefined, fetchJson } from "./util";
+import { pick, safeIso, safeIsoOrUndefined, fetchJson, parseNum, unwrapRecords } from "./util";
 
 describe("pick", () => {
   it("正常情況：完全比對的鍵名直接命中", () => {
@@ -132,5 +132,42 @@ describe("fetchJson 重試邏輯", () => {
 
     await expect(fetchJson("https://example.com/data")).rejects.toThrow("HTTP 404");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("parseNum", () => {
+  it("正常情況：數字字串與數字都能解析", () => {
+    expect(parseNum("5.8")).toBe(5.8);
+    expect(parseNum(5.8)).toBe(5.8);
+  });
+
+  it("【防迴歸】水利署真實回應曾出現空字串代表「未設定」——不能被當成 0", () => {
+    expect(parseNum("")).toBeUndefined();
+  });
+
+  it("邊界情況：undefined／null／無法解析的字串回傳 undefined", () => {
+    expect(parseNum(undefined)).toBeUndefined();
+    expect(parseNum(null)).toBeUndefined();
+    expect(parseNum("not a number")).toBeUndefined();
+  });
+});
+
+describe("unwrapRecords", () => {
+  it("正常情況：本身就是陣列時直接回傳", () => {
+    expect(unwrapRecords([{ a: 1 }])).toEqual([{ a: 1 }]);
+  });
+
+  it("正常情況：包在 records 欄位底下", () => {
+    expect(unwrapRecords({ records: [{ a: 1 }] })).toEqual([{ a: 1 }]);
+  });
+
+  it("正常情況：巢狀包在 result.records 底下（CKAN 常見外殼格式）", () => {
+    expect(unwrapRecords({ result: { records: [{ a: 1 }] } })).toEqual([{ a: 1 }]);
+  });
+
+  it("邊界情況：都對不上時回傳空陣列，不拋出例外", () => {
+    expect(unwrapRecords({ foo: "bar" })).toEqual([]);
+    expect(unwrapRecords(null)).toEqual([]);
+    expect(unwrapRecords(undefined)).toEqual([]);
   });
 });

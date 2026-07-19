@@ -1,6 +1,6 @@
 import { PulseEvent, Severity } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
-import { fetchJson, ok, fail, pick, safeIso } from "./util";
+import { fetchJson, ok, fail, pick, safeIso, unwrapRecords } from "./util";
 
 // Folded into the existing "flood" category (水利大類) rather than a new
 // category — reservoir storage and river water level are both 水利署 data
@@ -47,23 +47,17 @@ export async function fetchReservoirLevels() {
   }
   try {
     const raw = await fetchJson<unknown>(url);
-    // opendata.wra.gov.tw's /api/v2/{resource-id} endpoints (confirmed
-    // correct domain+path by the user, replacing the earlier fhy.wra.gov.tw
-    // guess that returned 503) are CKAN-like, so the array may come back
-    // bare, under "records", or nested under "result.records" depending on
-    // which shape this resource uses — schema itself is still unconfirmed,
-    // see SPEC.md P0-1.
-    const nestedRecords = (raw as { result?: { records?: unknown[] } })?.result?.records;
-    const records: Record<string, unknown>[] = Array.isArray(raw)
-      ? (raw as Record<string, unknown>[])
-      : Array.isArray((raw as { records?: unknown[] })?.records)
-      ? (raw as { records: Record<string, unknown>[] }).records
-      : Array.isArray(nestedRecords)
-      ? (nestedRecords as Record<string, unknown>[])
-      : [];
-
+    // Confirmed real response (2026-07-19): records look like
+    // { reservoiridentifier, effectivewaterstoragecapacity, waterlevel,
+    // observationtime, ... } — no percentage-of-storage field at all. Storage
+    // percentage requires each reservoir's total effective capacity (a
+    // separate WRA reference dataset, not yet located — see SPEC.md P0-1),
+    // so the pct-based filtering below still can't fire against real data
+    // yet; kept as-is (rather than guessed further) until that companion
+    // dataset is found, same situation flood.ts was in before its station-info
+    // join was found.
     const events: PulseEvent[] = [];
-    for (const r of records) {
+    for (const r of unwrapRecords(raw)) {
       const pctRaw = pick(r, "PercentageOfStorage", "percentage", "storage_rate", "蓄水率");
       const pct = typeof pctRaw === "string" ? parseFloat(pctRaw) : Number(pctRaw);
       if (!Number.isFinite(pct) || pct >= 30) continue; // only surface notably low storage

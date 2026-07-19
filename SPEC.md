@@ -8,8 +8,8 @@
 | 天氣警特報（W-C0033-001） | 中央氣象署天氣特報，需 `CWA_API_KEY` | [x] |
 | 空氣品質 | 環境部即時測站 AQI，需 `MOENV_API_KEY` | [x] |
 | 交通事件 | TDX 國道事件，需 `TDX_CLIENT_ID`/`SECRET` | [x] |
-| 水利淹水 | 水利署即時水位，`WRA_WATER_LEVEL_URL` | [x]（端點欄位未經真實驗證，見技術債） |
-| 水庫蓄水率（併入水利淹水類別） | 水利署水庫即時水情，`WRA_RESERVOIR_URL`，只在蓄水率 <30% 時顯示 | [x]（端點欄位未經真實驗證，見技術債） |
+| 水利淹水 | 水利署即時水位 join 測站警戒門檻（`WRA_WATER_LEVEL_URL` + `WRA_WATER_STATION_INFO_URL`） | [x]（欄位已用真實回應確認） |
+| 水庫蓄水率（併入水利淹水類別） | 水利署水庫即時水情，`WRA_RESERVOIR_URL`，只在蓄水率 <30% 時顯示 | [x]（欄位已知，但缺少容量上限參考資料集，見技術債） |
 | 火災消防 | 新聞 RSS 關鍵字過濾 | [x] |
 | 治安快訊 | 新聞 RSS 關鍵字過濾，UI 明確標示非官方個案資料 | [x] |
 | 停班停課 | 國家災害防救科技中心 (NCDR) RSS 公告，`NCDR_SUSPENSION_URL` | [x]（端點已確認，欄位仍待驗證，見技術債） |
@@ -113,6 +113,42 @@ P1/P2 項目的開發。
   外殼格式）。如果部署後這兩個來源仍是 0 筆或示範資料，麻煩貼一次
   `/api/debug?source=flood`／`?source=reservoir` 的實際回應，才能像 TDX
   那次一樣一次修對欄位名稱。
+- **河川水位欄位已用真實回應確認、警戒邏輯也重新設計**：使用者貼回
+  `/api/debug?source=flood` 的實際內容後發現，即時水位這個資料集**只有
+  `stationid`／`waterlevel`／`datetime`，完全沒有警戒等級、站名、座標**——
+  原本「`AlertLevel` 欄位猜錯」的假設是錯的，正確答案是這個資料集本身
+  就不包含警戒判斷所需的資訊，需要另外 join 一個「測站基本資料」參考資料集
+  才能算出警戒。使用者接著在 `opendata.wra.gov.tw` 上找到並確認了這個參考
+  資料集（`c4acc691-7416-40ca-9464-292c0c00da92`），關鍵發現：
+  - 用即時資料的 `stationid` 對應參考資料的 `basinidentifier`（兩個資料集
+    對同一個值用了不同欄位名稱，WRA 內部命名本身就不一致）即可 join。
+  - 警戒門檻在 `alertlevel1`／`alertlevel2`／`alertlevel3`（一級最高、
+    三級最低，真實資料 `alertlevel1: "5.8" > alertlevel2: "4.6"` 驗證了這個
+    順序），某一級沒有設定時是空字串 `""`，`Number("")` 是 `0` 不是
+    `NaN`，如果沒特別處理會被誤判成「門檻是 0」——新增 `lib/sources/util.ts`
+    的 `parseNum()` 統一處理這個問題，空字串一律回傳 `undefined`。
+  - 真正的站名在 `observatoryname`，座標在 `locationbytwd97_xy`，格式是
+    **TWD97 TM2 投影座標**（例如 `"313411.44 2790930.63"`），不是經緯度，
+    需要做座標轉換才能當地圖座標用——新增 `lib/geo.ts` 的 `twd97ToWgs84()`
+    做這個轉換，用使用者提供的真實測站（新磺溪橋，新北市金山區）反查驗證：
+    轉換結果 25.2257°N / 121.6294°E 確實落在金山區沿海一帶，跟已知地理
+    位置吻合。
+  - `lib/sources/flood.ts` 改寫成平行抓取即時讀數＋測站參考資料、用
+    `stationid`/`basinidentifier` join、依三級門檻算出 `severityFromLevels()`
+    （已測試涵蓋一二三級門檻邊界、門檻缺失、完全無門檻等情況）。因為現在
+    有精確座標，不再需要縣市中心點 fallback；也因為沒有結構化的中文縣市
+    欄位（測站地址只有英文版），`county` 欄位就不填了，直接用精確座標定位。
+  - 用使用者提供的兩筆真實資料（正常水位 1.9m vs. 門檻 4.6/5.8m）寫了
+    join 邏輯的整合測試，過程中抓到一個真的 bug：`STATION_INFO_URL` 原本
+    寫成 module 層級常數（在模組載入當下就讀一次 `process.env`），這樣的
+    寫法不只讓測試沒辦法用 `vi.stubEnv()` 覆蓋，也代表任何未來想在同一個
+    process 內動態改這個環境變數的情境都不會生效——已改成跟其他來源一致
+    的寫法（每次呼叫時才讀 `process.env`）。
+  - **水庫蓄水率還沒解決**：使用者也貼了水庫端點的真實回應，欄位是
+    `reservoiridentifier`／`effectivewaterstoragecapacity`／`waterlevel`，
+    同樣沒有百分比欄位，需要另一個「水庫容量上限」參考資料集才能算蓄水率，
+    這個資料集的資源 ID 目前還沒找到，`reservoir.ts` 暫時維持原本的欄位
+    猜測不變（詳見下方 P1-3）。
 - **順便補上的通用韌性**：無論上面的路徑是否修對，503/502/504 這類閘道層
   暫時性錯誤原本會直接被當成永久失敗、立刻退回示範資料。`lib/sources/util.ts`
   的 `fetchJson`/`fetchText` 現在會對這三種狀態碼自動重試（最多 2 次、
@@ -199,9 +235,14 @@ CKAN 系統，`https://data.cdc.gov.tw/api/3` 是真實可用的 base URL，
 - 只在蓄水率 <30% 時產生事件（<20% 額外標示「低於二級運用標準」），比照
   `airQuality.ts` 只呈現 AQI≥100 的做法
 
-**資料來源**：水利署，`WRA_RESERVOIR_URL`，預設免金鑰，**端點欄位未經真實驗證**
-（同 P0-1，AI agent 沙盒連不到 `fhy.wra.gov.tw`）
-**優先級理由**：可重用既有 `flood` 分類色相，實作成本低
+**資料來源**：水利署，`WRA_RESERVOIR_URL`，預設免金鑰。**端點與欄位已用真實回應
+確認**（`reservoiridentifier`／`effectivewaterstoragecapacity`／`waterlevel`），
+但沒有百分比欄位——要算「蓄水率」需要每座水庫的容量上限，這是另一個還沒找到
+資源 ID 的參考資料集，做法應該跟 P0-1 修好的河川水位一樣（join 一個測站/水庫
+基本資料資料集），只是這個資料集的資源 ID 還沒著落，`severityFromStoragePct()`
+與 `<30%` 篩選邏輯目前仍是等實際欄位到位後才會真正被觸發到。
+**優先級理由**：可重用既有 `flood` 分類色相，實作成本低（河川水位那半已完成，
+只差水庫容量上限這個資料集）
 
 #### 4. 土石流潛勢溪流警戒 `[ ]`
 

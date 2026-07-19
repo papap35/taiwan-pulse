@@ -107,6 +107,32 @@ export function safeIsoOrUndefined(value: string | undefined | null): string | u
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
+// Government open-data feeds often represent "no value" as an empty string
+// rather than omitting the field (confirmed on WRA's real station-info
+// response: alertlevel3 was "" for a station with no third-tier threshold).
+// Number("") is 0, not NaN, so a bare Number()/parseFloat() call here would
+// silently treat "not set" as "the threshold is zero" — always returns
+// undefined instead of a false zero for anything that isn't a real number.
+export function parseNum(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const n = typeof value === "string" ? parseFloat(value) : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+// WRA's opendata.wra.gov.tw/api/v2/{resource-id} endpoints are CKAN-like:
+// the array of records may come back bare, under "records", or nested under
+// "result.records" depending on which resource this is (confirmed against
+// real responses across three different resources so far — see SPEC.md
+// P0-1). Centralized here instead of duplicated per source.
+export function unwrapRecords(raw: unknown): Record<string, unknown>[] {
+  if (Array.isArray(raw)) return raw as Record<string, unknown>[];
+  const direct = (raw as { records?: unknown })?.records;
+  if (Array.isArray(direct)) return direct as Record<string, unknown>[];
+  const nested = (raw as { result?: { records?: unknown } })?.result?.records;
+  if (Array.isArray(nested)) return nested as Record<string, unknown>[];
+  return [];
+}
+
 export function ok(
   category: Category,
   name: string,
