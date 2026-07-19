@@ -16,43 +16,62 @@ import { PulseEvent, SourceStatus, Category } from "@/lib/types";
 // what actually lets the route stay statically rendered with ISR.
 export const REVALIDATE_SECONDS = 120;
 
+// Gateway-level errors (502/503/504) are usually transient — an upstream
+// government API momentarily overloaded or mid-deploy — unlike 404/401/etc,
+// which mean "this request is wrong" and retrying changes nothing. Confirmed
+// against a real production report: WRA's water level and reservoir
+// endpoints returned HTTP 503 (see SPEC.md P0-1), which a bare fetch treats
+// the same as a permanent failure and immediately falls back to demo data.
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const RETRY_BACKOFF_MS = [500, 1500];
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit | undefined,
+  timeoutMs: number
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        next: { revalidate: REVALIDATE_SECONDS },
+      });
+      if (res.ok || !RETRYABLE_STATUS.has(res.status)) return res;
+      lastError = new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
+    } catch (err) {
+      lastError = err;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (attempt < RETRY_BACKOFF_MS.length) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS[attempt]));
+    }
+  }
+  throw lastError;
+}
+
 export async function fetchJson<T>(
   url: string,
   init?: RequestInit,
   timeoutMs = 10000
 ): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      next: { revalidate: REVALIDATE_SECONDS },
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
-    }
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(timer);
+  const res = await fetchWithRetry(url, init, timeoutMs);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
   }
+  return (await res.json()) as T;
 }
 
 export async function fetchText(url: string, timeoutMs = 10000): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      next: { revalidate: REVALIDATE_SECONDS },
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
-    }
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
+  const res = await fetchWithRetry(url, undefined, timeoutMs);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
   }
+  return await res.text();
 }
 
 // Case-insensitive field lookup: several Taiwan open-data feeds vary field

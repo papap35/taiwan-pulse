@@ -75,6 +75,21 @@ curl 打一次實際端點，確認欄位名稱與 `lib/sources/flood.ts`、
 內的假設一致，必要時調整。這個 repo 的開發環境對外網路被擋，這幾個端點都
 **未經真實驗證**，見 SPEC.md P0-1。
 
+**水利署端點曾回報 `HTTP 503`**：使用者部署後回報 `WRA_WATER_LEVEL_URL`／
+`WRA_RESERVOIR_URL` 都是 503（服務暫時無法使用），不是 404。已根據網路上
+其他人介接同一組 API 的參考資料，把 `WRA_WATER_LEVEL_URL` 的路徑從
+`.../Water/RealTimeWaterLevel` 改成 `.../Water/RealTimeInfo`（原本的路徑名稱
+在任何參考資料裡都找不到，可能本來就是錯的），`WRA_RESERVOIR_URL` 修正了
+大小寫。**這兩個修正都還沒有真實回應驗證過**——503 可能是路徑仍然錯誤、
+可能是 WRA 伺服器暫時性問題、也可能是 WRA 的防護機制擋掉了雲端服務商（例如
+Vercel）的連線來源，這三種情況目前無法從開發環境分辨。如果更新部署後 503
+仍然出現，麻煩用 `/api/debug?source=flood`／`?source=reservoir` 貼一次實際
+結果（或錯誤訊息），才能繼續往下修正；如果是即時看得到 503，也可以直接在
+自己電腦用瀏覽器打開端點網址，看看是否能連上，幫助判斷是不是雲端 IP 被擋。
+另外也順便讓 `fetchJson`/`fetchText`（`lib/sources/util.ts`）對 502/503/504
+這類閘道層暫時性錯誤自動重試（最多 2 次），如果 503 只是偶發的暫時性問題，
+重試後應該就會自己恢復，不用等下次輪詢。
+
 `lib/sources/epidemic.ts`（疫情監測）不在上面這份「請自行核對」清單裡——
 使用者提供了疾病管制署官方的 OpenAPI 規格文件後，確認 CDC 開放資料平台是
 標準 **CKAN** 系統，`https://data.cdc.gov.tw/api/3` 的 `package_search`／
