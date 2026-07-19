@@ -12,7 +12,7 @@
 | 水庫蓄水率（併入水利淹水類別） | 水利署水庫即時水情，`WRA_RESERVOIR_URL`，只在蓄水率 <30% 時顯示 | [x]（端點欄位未經真實驗證，見技術債） |
 | 火災消防 | 新聞 RSS 關鍵字過濾 | [x] |
 | 治安快訊 | 新聞 RSS 關鍵字過濾，UI 明確標示非官方個案資料 | [x] |
-| 停班停課 | 人事行政總處天然災害停止上班上課，`DGPA_SUSPENSION_URL` | [x]（端點欄位未經真實驗證，見技術債） |
+| 停班停課 | 國家災害防救科技中心 (NCDR) RSS 公告，`NCDR_SUSPENSION_URL` | [x]（端點已確認，欄位仍待驗證，見技術債） |
 | 電力供需燈號 | 台灣電力公司供電燈號，`TAIPOWER_GRID_STATUS_URL`，獨立橫幅非分類事件 | [x]（端點欄位未經真實驗證，見技術債） |
 | 地圖 + 事件列表 | react-leaflet + 篩選 + 嚴重程度分級，色彩配置符合 dataviz 準則 | [x] |
 | 示範資料退場機制 | 每個來源無金鑰/URL 時自動退回標示清楚的 demo 資料，並用 `DemoBadge` 顯眼標示（曾發生使用者誤以為 demo 資料是即時真實資料的情況） | [x] |
@@ -119,7 +119,23 @@ P1/P2 項目的開發。
   500ms／1500ms 退避），404/401 等「請求本身有問題」的狀態碼則不重試，維持
   原本行為。這是 T3 提到的重試機制的一般化版本（原本只打算給 TDX 429 用），
   對這次水利署的 503、以及任何來源未來遇到的暫時性閘道錯誤都有幫助。
-- 其餘欄位假設（停班停課、電力燈號的實際欄位名稱）仍待驗證。
+- **停班停課端點整個換掉**：原本猜測的 `www.dgpa.gov.tw/typh/opendata/open.json`
+  使用者部署後回報 `HTTP 404 Not Found`。查證後發現這個路徑很可能從來就不
+  存在——目前找到唯一真正介接這份資料的公開專案（[tw-nds-cli](https://github.com/bobby1030/tw-nds-cli)）
+  是直接抓 `dgpa.gov.tw/nds.html` 的 HTML 表格解析，不是打 JSON API，代表
+  人事行政總處本身可能沒有提供穩定的 JSON/XML feed。**使用者改為提供國家
+  災害防救科技中心 (NCDR) 的官方 RSS/Atom 公告 feed**
+  （`https://alerts.ncdr.nat.gov.tw/RssAtomFeed.ashx?AlertType=33`，
+  `AlertType=33` 是停班停課類別），已把 `lib/sources/suspension.ts` 從
+  `fetchJson` 改成重用既有的 `fetchRssItems()`（`lib/sources/newsRss.ts`，
+  原本給火災/治安新聞來源用的 RSS/Atom 解析器），並比照 `fire.ts`/`security.ts`
+  的做法用縣市文字比對取得地點座標，**不再是「有設定網址才啟用」，改成跟
+  `epidemic.ts` 一樣預設直接啟用**（`NCDR_SUSPENSION_URL` 只作為手動覆蓋
+  選項）。網域＋端點由使用者直接確認正確，但實際 RSS 項目的 `title`/
+  `description` 文字內容仍未驗證（`alerts.ncdr.nat.gov.tw` 對 AI agent 沙盒
+  與 WebFetch 都回傳 403，看不到真實內容），如果部署後這個來源持續是 0 筆，
+  麻煩貼一次 `/api/debug?source=suspension` 的實際回應。
+- 電力燈號的實際欄位名稱仍待驗證。
 - **CDC 疫情監測**：使用者提供官方 OpenAPI 規格後確認 https://data.cdc.gov.tw/
   是標準 CKAN 系統，`epidemic.ts` 改成用 CKAN 文件化的
   `package_search`／`datastore_search` 兩段式流程自動找資料，**預設直接啟用**，
