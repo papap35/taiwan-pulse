@@ -259,14 +259,18 @@ P1/P2 項目
 
 ## 技術債與基礎強化
 
-### T1. 補自動化測試框架 `[ ]`
+### T1. 補自動化測試框架 `[x]`
 
 **背景**：目前完全沒有單元測試，`lib/sources/*.ts` 裡的嚴重程度判斷函式
 （`magnitudeToSeverity`、`aqiToSeverity`、`levelFromReserveRate` 等）都是
 純函式、輸入輸出明確，是最適合優先補測試的對象（見 AGENTS.md 2.2）。
 
-**技術方案**：導入 Vitest，測試放在 `lib/**/*.test.ts`，先覆蓋所有嚴重程度
-判斷函式與 `countyCentroid()`，CI workflow 加一個 `npm test` step。
+**已完成**：導入 Vitest（`lib/**/*.test.ts`），CI workflow 在 typecheck 後、
+build 前加了 `npm test` step。涵蓋：`countyCentroid`、`computeFreshness`／
+`endOfTaiwanDay`、`pick`／`safeIso`／`safeIsoOrUndefined`，以及全部 7 個來源
+的嚴重程度判斷函式（原本是 module-private，已改成 `export` 才能測）。共 10
+個測試檔、64 個測試案例，全數通過。`safeIso` 的測試裡有一個對應真實
+production bug 的防迴歸測試（地震來源日期解析失敗直接 throw 的那次）。
 
 ### T2. 端點 schema 驗證與監控 `[~]`
 

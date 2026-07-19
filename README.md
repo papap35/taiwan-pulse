@@ -208,8 +208,10 @@ fetch」，同一次建置就會變成 `ƒ Dynamic`。也就是說，**這個 bu
 ## CI/CD
 
 - **CI**（`.github/workflows/ci.yml`）：每次 push 或開 PR 都會自動跑
-  `npm ci` → `eslint` → `tsc --noEmit` → `next build`，任何一步失敗 PR 就會顯示紅叉。
-  不需要任何 secrets。
+  `npm ci` → `eslint` → `tsc --noEmit` → `vitest run` → `next build`，任何
+  一步失敗 PR 就會顯示紅叉。不需要任何 secrets。單元測試（`lib/**/*.test.ts`）
+  只測 `lib/` 底下的純函式（各來源的嚴重程度判斷、時效性計算、縣市座標查詢
+  等），見 `AGENTS.md` 2.1-2.2。
 - **CD（部署到 Vercel）**：採用 Vercel 原生 Git 整合，一次性設定、之後全自動：
   1. 到 https://vercel.com/new ，選擇 **Import Git Repository**，連接
      `papap35/taiwan-pulse`。

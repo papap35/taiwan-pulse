@@ -9,7 +9,7 @@ const NAME = "人事行政總處 - 天然災害停止上班上課";
 // 2 停止上班上課(部分), 3 上班上課(視情況調整) — codes vary by release, so we
 // treat anything containing "停止上班" / "停止上課" in the text as newsworthy
 // regardless of the numeric code, to stay resilient to schema drift.
-function severityFromText(text: string): Severity {
+export function severityFromText(text: string): Severity {
   if (/停止上班.*停止上課|停班停課/.test(text)) return "serious";
   if (/停止上班|停止上課/.test(text)) return "warning";
   return "info";

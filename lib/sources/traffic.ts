@@ -53,13 +53,13 @@ function demoData(): PulseEvent[] {
   ];
 }
 
-function severityFromDescription(desc: string): Severity {
+export function severityFromDescription(desc: string): Severity {
   if (/(封閉|坍方|中斷)/.test(desc)) return "critical";
   if (/(事故|車禍|回堵)/.test(desc)) return "serious";
   return "info";
 }
 
-function findCounty(text: string): string | undefined {
+export function findCounty(text: string): string | undefined {
   return Object.keys(COUNTY_COORDS).find((c) => text.includes(c));
 }
 

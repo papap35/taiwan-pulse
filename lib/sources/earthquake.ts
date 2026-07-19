@@ -23,7 +23,7 @@ interface CwaEarthquakeResponse {
   records?: { Earthquake?: CwaEarthquakeRecord[] };
 }
 
-function magnitudeToSeverity(mag: number): Severity {
+export function magnitudeToSeverity(mag: number): Severity {
   if (mag >= 6.5) return "critical";
   if (mag >= 5.5) return "serious";
   if (mag >= 4.5) return "warning";
