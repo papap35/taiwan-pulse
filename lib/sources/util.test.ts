@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { pick, safeIso, safeIsoOrUndefined } from "./util";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { pick, safeIso, safeIsoOrUndefined, fetchJson } from "./util";
 
 describe("pick", () => {
   it("正常情況：完全比對的鍵名直接命中", () => {
@@ -63,5 +63,74 @@ describe("safeIsoOrUndefined", () => {
   it("錯誤情況：無法解析的字串回傳 undefined，不拋出例外", () => {
     expect(() => safeIsoOrUndefined("garbage")).not.toThrow();
     expect(safeIsoOrUndefined("garbage")).toBeUndefined();
+  });
+});
+
+describe("fetchJson 重試邏輯", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("正常情況：第一次就成功時只呼叫一次 fetch，不重試", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ hello: "world" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchJson("https://example.com/data")).resolves.toEqual({ hello: "world" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("【防迴歸】水利署水位/水庫端點曾回報 HTTP 503——503 之後重試，第二次成功就採用該結果", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, statusText: "Service Unavailable" })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({ hello: "world" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const promise = fetchJson("https://example.com/data");
+    await vi.runAllTimersAsync();
+
+    await expect(promise).resolves.toEqual({ hello: "world" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("錯誤情況：503 連續發生超過重試上限時，拋出最後一次的錯誤", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const promise = fetchJson("https://example.com/data");
+    const assertion = expect(promise).rejects.toThrow("HTTP 503");
+    await vi.runAllTimersAsync();
+    await assertion;
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("邊界情況：非暫時性錯誤（404）不重試，立即拋出", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchJson("https://example.com/data")).rejects.toThrow("HTTP 404");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
