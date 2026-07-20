@@ -22,6 +22,10 @@ import { fetchGridStatusRaw } from "@/lib/gridStatus";
 // not part of the app's normal request path, so it intentionally skips the
 // ISR caching used by /api/events.
 export const dynamic = "force-dynamic";
+// epidemic's two-hop CKAN flow can take up to ~50s worst case (see
+// lib/sources/epidemic.ts) — this is exactly the endpoint used to diagnose
+// that kind of issue, so it needs the same headroom as the real routes.
+export const maxDuration = 60;
 
 const SOURCES: Record<string, () => Promise<unknown>> = {
   earthquake: fetchEarthquakeRaw,

@@ -2,6 +2,15 @@ import { PulseEvent, Severity } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
 import { fetchJson, ok, fail, pick, safeIso } from "./util";
 
+// This source's flow (package_search -> datastore_search, or a raw-file
+// fallback for non-datastore resources) is inherently slower than a single
+// simple API call, and the raw-file fallback in particular has no size
+// limit — CDC's own notifiable-disease export can be a large historical
+// file. A user reported "This operation was aborted" against the default
+// 10s timeout; giving this specific two-hop flow more headroom than most
+// single-call sources need.
+const CDC_TIMEOUT_MS = 25000;
+
 const NAME = "疾病管制署 - 法定傳染病監測";
 
 // Confirmed via CDC's own published OpenAPI spec (user-provided, 2026-07-15):
@@ -71,7 +80,7 @@ interface CkanDatastoreResponse {
 // the resource's raw file URL (CSV/JSON) directly.
 async function fetchViaCkanSearch(): Promise<Record<string, unknown>[]> {
   const searchUrl = `${CDC_API_BASE}/action/package_search?q=${encodeURIComponent(SEARCH_QUERY)}`;
-  const search = await fetchJson<CkanSearchResponse>(searchUrl);
+  const search = await fetchJson<CkanSearchResponse>(searchUrl, undefined, CDC_TIMEOUT_MS);
   const pkg = search.result?.results?.[0];
   if (!pkg) throw new Error(`no CKAN package found for query "${SEARCH_QUERY}"`);
 
@@ -80,14 +89,14 @@ async function fetchViaCkanSearch(): Promise<Record<string, unknown>[]> {
 
   if (resource.datastore_active) {
     const dsUrl = `${CDC_API_BASE}/action/datastore_search?resource_id=${resource.id}&limit=500`;
-    const ds = await fetchJson<CkanDatastoreResponse>(dsUrl);
+    const ds = await fetchJson<CkanDatastoreResponse>(dsUrl, undefined, CDC_TIMEOUT_MS);
     return ds.result?.records ?? [];
   }
 
   if (!resource.url) {
     throw new Error(`CKAN resource "${resource.id}" has no url and is not datastore-active`);
   }
-  const raw = await fetchJson<unknown>(resource.url);
+  const raw = await fetchJson<unknown>(resource.url, undefined, CDC_TIMEOUT_MS);
   return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
 }
 
@@ -98,10 +107,10 @@ async function fetchViaCkanSearch(): Promise<Record<string, unknown>[]> {
 export async function fetchEpidemicRaw(): Promise<unknown> {
   const manualUrl = process.env.CDC_EPIDEMIC_URL;
   if (manualUrl) {
-    return fetchJson<unknown>(manualUrl);
+    return fetchJson<unknown>(manualUrl, undefined, CDC_TIMEOUT_MS);
   }
   const searchUrl = `${CDC_API_BASE}/action/package_search?q=${encodeURIComponent(SEARCH_QUERY)}`;
-  const search = await fetchJson<CkanSearchResponse>(searchUrl);
+  const search = await fetchJson<CkanSearchResponse>(searchUrl, undefined, CDC_TIMEOUT_MS);
   const pkg = search.result?.results?.[0];
   if (!pkg) return { searchUrl, search };
 
@@ -110,7 +119,7 @@ export async function fetchEpidemicRaw(): Promise<unknown> {
 
   if (resource.datastore_active) {
     const dsUrl = `${CDC_API_BASE}/action/datastore_search?resource_id=${resource.id}&limit=20`;
-    const ds = await fetchJson<CkanDatastoreResponse>(dsUrl);
+    const ds = await fetchJson<CkanDatastoreResponse>(dsUrl, undefined, CDC_TIMEOUT_MS);
     return {
       searchUrl,
       matchedPackage: pkg.name,
@@ -130,7 +139,7 @@ export async function fetchEpidemic() {
     const manualUrl = process.env.CDC_EPIDEMIC_URL;
     let records: Record<string, unknown>[];
     if (manualUrl) {
-      const raw = await fetchJson<unknown>(manualUrl);
+      const raw = await fetchJson<unknown>(manualUrl, undefined, CDC_TIMEOUT_MS);
       records = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
     } else {
       records = await fetchViaCkanSearch();

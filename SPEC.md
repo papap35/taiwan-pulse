@@ -414,6 +414,21 @@ function、或呼叫方自己的逾時）願意等待的時間，最終被外層
 現在會直接拋出、不再重試（重試同樣的逾時時間沒有意義，只會讓本來就慢的
 請求更慢），只有真正拿到 HTTP 502/503/504 回應時才重試。
 
+**上面那個修正之後，使用者仍回報同樣的 `This operation was aborted`**——
+代表問題不只是「重試把逾時疊加」，連單一次呼叫都可能超過原本 10 秒的逾時
+上限。`epidemic.ts` 的 CKAN 流程本身就有兩個潛在慢點：(1) 兩段式循序呼叫
+（`package_search` 再 `datastore_search`）本來就比其他來源的單一 API
+呼叫慢；(2) 如果比對到的資源不是 `datastore_active`（可查詢），會直接
+`fetch` 該資源的原始檔案網址，這條路徑完全沒有大小限制——CDC
+法定傳染病資料集的歷史匯出檔案可能很大。已將 `epidemic.ts` 三個
+`fetchJson` 呼叫的逾時從預設 10 秒延長到 25 秒，並在
+`app/api/events/route.ts`、`app/api/events/[category]/route.ts`、
+`app/api/debug/route.ts` 加上 `export const maxDuration = 60`——單純延長
+用戶端逾時沒有意義，如果平台本身（例如 Vercel serverless function）用更短
+的執行時間上限把整個請求中止，程式碼再怎麼調逾時都不會生效。這個 `maxDuration`
+設定在方案本身限制更短的情況下不會有任何效果，但在方案允許的情況下能真正
+解決問題，沒有下行風險。
+
 ### T4. 漸進式資料載入（拆分 `/api/events`）`[x]`
 
 **背景**：使用者發現原本的架構是前端單一 `useSWR("/api/events")`，後端在
