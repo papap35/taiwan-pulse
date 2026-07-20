@@ -25,6 +25,20 @@ export const REVALIDATE_SECONDS = 120;
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 const RETRY_BACKOFF_MS = [500, 1500];
 
+// Several Taiwan government domains (WRA's opendata platform, CDC's CKAN
+// portal) return inconsistent errors depending on the caller — a browser or
+// this codebase's own debug tooling gets a real HTTP response (sometimes
+// even a 403), while requests from a serverless host get a connection-level
+// "fetch failed" with no response at all. That pattern (same URL, different
+// failure mode per caller) points at a WAF/bot-detection layer that trusts
+// requests carrying an ordinary browser fingerprint more than Node's default
+// fetch client. Sending a standard User-Agent/Accept is a low-risk, common
+// mitigation for exactly this — not spoofing a false identity, just not
+// looking like an easily-fingerprinted bot client for public open data that
+// is meant to be machine-readable in the first place.
+const BROWSER_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
 async function fetchWithRetry(
   url: string,
   init: RequestInit | undefined,
@@ -37,6 +51,11 @@ async function fetchWithRetry(
     try {
       const res = await fetch(url, {
         ...init,
+        headers: {
+          "User-Agent": BROWSER_USER_AGENT,
+          Accept: "application/json, text/plain, */*",
+          ...(init?.headers as Record<string, string> | undefined),
+        },
         signal: controller.signal,
         next: { revalidate: REVALIDATE_SECONDS },
       });

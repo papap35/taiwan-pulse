@@ -85,6 +85,37 @@ describe("fetchJson 重試邏輯", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("【防迴歸】多個政府網域對預設的 fetch client 有不一致的封鎖行為（同一網址在不同呼叫端回傳不同錯誤）——一律帶上標準瀏覽器 User-Agent 降低被 WAF 擋下的機率", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchJson("https://example.com/data");
+
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.headers["User-Agent"]).toMatch(/Mozilla/);
+  });
+
+  it("邊界情況：呼叫端自訂的 headers（例如 Authorization）不會被預設值蓋掉", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchJson("https://example.com/data", { headers: { Authorization: "Bearer token" } });
+
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.headers.Authorization).toBe("Bearer token");
+    expect(options.headers["User-Agent"]).toMatch(/Mozilla/);
+  });
+
   it("【防迴歸】水利署水位/水庫端點曾回報 HTTP 503——503 之後重試，第二次成功就採用該結果", async () => {
     vi.useFakeTimers();
     const fetchMock = vi
