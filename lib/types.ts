@@ -23,6 +23,12 @@ export interface PulseEvent {
     lng: number;
     name?: string;
   };
+  // Optional short line segment near `location` for events tied to a road
+  // stretch (currently only traffic.ts). This is a coarse approximation of
+  // the road's local direction, not the real road geometry (Taiwan Pulse
+  // doesn't have road-shape data — see SPEC.md P2-6.5) — good enough to
+  // visually distinguish "a stretch of road" from a single point.
+  route?: { lat: number; lng: number }[];
   time: string; // ISO 8601 — 發布/觀測時間
   validUntil?: string; // ISO 8601 — 官方標示的有效期限（例如天氣特報的解除時間），來源沒有提供時留空
   source: string;

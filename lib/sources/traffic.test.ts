@@ -4,6 +4,7 @@ import {
   findCounty,
   isRoutineConstruction,
   parseWktPoint,
+  approximateRouteSegment,
 } from "./traffic";
 
 describe("severityFromDescription", () => {
@@ -76,5 +77,41 @@ describe("parseWktPoint", () => {
     expect(parseWktPoint(undefined)).toBeUndefined();
     expect(parseWktPoint(123)).toBeUndefined();
     expect(parseWktPoint("not a point")).toBeUndefined();
+  });
+});
+
+describe("approximateRouteSegment", () => {
+  const point = { lat: 24.833352, lng: 121.199345 };
+
+  it("正常情況：北向/南向產生南北走向的線段（緯度變化、經度不變）", () => {
+    for (const direction of ["北向", "南向"]) {
+      const [a, b] = approximateRouteSegment(point, direction);
+      expect(a.lng).toBe(point.lng);
+      expect(b.lng).toBe(point.lng);
+      expect(a.lat).not.toBe(b.lat);
+    }
+  });
+
+  it("正常情況：東向/西向產生東西走向的線段（經度變化、緯度不變）", () => {
+    for (const direction of ["東向", "西向"]) {
+      const [a, b] = approximateRouteSegment(point, direction);
+      expect(a.lat).toBe(point.lat);
+      expect(b.lat).toBe(point.lat);
+      expect(a.lng).not.toBe(b.lng);
+    }
+  });
+
+  it("邊界情況：沒有方向文字，或方向文字含糊（例如雙向、內側）時預設南北走向", () => {
+    for (const direction of ["", "雙向", "內側"]) {
+      const [a, b] = approximateRouteSegment(point, direction);
+      expect(a.lng).toBe(point.lng);
+      expect(a.lat).not.toBe(b.lat);
+    }
+  });
+
+  it("線段以事件座標為中心，兩端對稱", () => {
+    const [a, b] = approximateRouteSegment(point, "北向");
+    const midLat = (a.lat + b.lat) / 2;
+    expect(midLat).toBeCloseTo(point.lat, 10);
   });
 });

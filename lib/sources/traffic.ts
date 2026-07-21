@@ -37,6 +37,7 @@ async function getToken(clientId: string, clientSecret: string): Promise<string>
 }
 
 function demoData(): PulseEvent[] {
+  const location = countyCentroid("新竹縣")!;
   return [
     {
       id: "demo-traffic-1",
@@ -45,7 +46,8 @@ function demoData(): PulseEvent[] {
       description: "占用內側車道，車流回堵約 3 公里",
       severity: "warning",
       county: "新竹縣",
-      location: countyCentroid("新竹縣"),
+      location,
+      route: approximateRouteSegment(location, "北向"),
       time: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
       source: NAME,
       isDemo: true,
@@ -73,6 +75,36 @@ export function isRoutineConstruction(title: string): boolean {
 
 export function findCounty(text: string): string | undefined {
   return Object.keys(COUNTY_COORDS).find((c) => text.includes(c));
+}
+
+// Real road curvature isn't available without TDX's separate road-network
+// GIS API (Map/Road/Network/... — deferred, see SPEC.md P2-6.5: joining it
+// against StartKM/EndKM turned out to need another round of dataset
+// research, similar in shape to the CDC epidemic rabbit hole, so this draws
+// a short straight segment near the incident's point instead. Oriented
+// along the highway's coarse compass heading from TDX's "Direction" field
+// (北向/南向/東向/西向) — not a real traced road shape, just enough to read
+// as "a stretch of road" instead of a bare point on the map.
+const ROUTE_HALF_LENGTH_DEG = 0.003; // ~300-350m each side at Taiwan's latitude
+
+export function approximateRouteSegment(
+  point: { lat: number; lng: number },
+  direction: string
+): { lat: number; lng: number }[] {
+  const isEastWest = /[東西]/.test(direction) && !/[北南]/.test(direction);
+  if (isEastWest) {
+    return [
+      { lat: point.lat, lng: point.lng - ROUTE_HALF_LENGTH_DEG },
+      { lat: point.lat, lng: point.lng + ROUTE_HALF_LENGTH_DEG },
+    ];
+  }
+  // Default to north-south: covers 北向/南向 explicitly, and is a reasonable
+  // fallback for anything else (雙向, 內側/外側, missing direction text) since
+  // most Taiwan freeway mileage runs roughly north-south anyway.
+  return [
+    { lat: point.lat - ROUTE_HALF_LENGTH_DEG, lng: point.lng },
+    { lat: point.lat + ROUTE_HALF_LENGTH_DEG, lng: point.lng },
+  ];
 }
 
 // TDX's "Positions" field is a WKT string, e.g. "POINT(121.199345 24.833352)"
@@ -175,14 +207,21 @@ export async function fetchTraffic() {
         "eventstarttime"
       ) as string | undefined;
       const id = pick(r, "EventID", "eventid", "RoadEventID", "roadeventid", "IncidentID", "incidentid");
+      const direction = String(
+        (freeway && pick(freeway, "Direction", "direction")) ?? ""
+      );
       // Fall back to a county-level marker (parsed from the road name /
       // description text) rather than no marker at all when precise
       // coordinates can't be parsed — same pattern as fire.ts/security.ts.
       const county = findCounty(`${road} ${desc}`);
-      const markerLocation =
-        Number.isFinite(lat) && Number.isFinite(lng)
-          ? { lat, lng, name: road }
-          : countyCentroid(county);
+      const hasPrecisePoint = Number.isFinite(lat) && Number.isFinite(lng);
+      const markerLocation = hasPrecisePoint
+        ? { lat, lng, name: road }
+        : countyCentroid(county);
+      // Only draw the approximate segment against a genuine precise point —
+      // a county-centroid fallback isn't a real road position, so a line
+      // through it would misleadingly imply one.
+      const route = hasPrecisePoint ? approximateRouteSegment({ lat, lng }, direction) : undefined;
       let severity = severityFromDescription(desc);
       if (severity === "serious" && isRoutineConstruction(title)) severity = "warning";
       return {
@@ -193,6 +232,7 @@ export async function fetchTraffic() {
         severity,
         county,
         location: markerLocation,
+        route,
         time: safeIso(start),
         source: NAME,
       };
