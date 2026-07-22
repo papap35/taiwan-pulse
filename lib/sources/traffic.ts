@@ -1,10 +1,9 @@
 import { PulseEvent, Severity } from "@/lib/types";
 import { COUNTY_COORDS, countyCentroid } from "@/lib/counties";
 import { fetchJson, ok, fail, pick, safeIso } from "./util";
+import { getTdxToken, hasTdxCredentials } from "./tdxAuth";
 
 const NAME = "TDX 運輸資料流通服務 - 國道事件";
-const TOKEN_URL =
-  "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
 // Confirmed correct by the user against TDX's live API (2026-07-15):
 // 高速公路道路事件資訊 = /v1/Traffic/RoadEvent/LiveEvent/Freeway — note this
 // is under v1, and under "RoadEvent/LiveEvent", not "Road/Traffic/Incident"
@@ -12,29 +11,6 @@ const TOKEN_URL =
 const INCIDENT_URL =
   process.env.TDX_INCIDENT_URL ??
   "https://tdx.transportdata.tw/api/basic/v1/Traffic/RoadEvent/LiveEvent/Freeway?%24format=JSON";
-
-let cachedToken: { token: string; expiresAt: number } | null = null;
-
-async function getToken(clientId: string, clientSecret: string): Promise<string> {
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 5000) {
-    return cachedToken.token;
-  }
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: clientId,
-    client_secret: clientSecret,
-  });
-  const res = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`TDX auth failed: HTTP ${res.status}`);
-  const data = (await res.json()) as { access_token: string; expires_in: number };
-  cachedToken = { token: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
-  return cachedToken.token;
-}
 
 function demoData(): PulseEvent[] {
   const location = countyCentroid("新竹縣")!;
@@ -123,23 +99,16 @@ export function parseWktPoint(wkt: unknown): { lat: number; lng: number } | unde
 // Untransformed upstream response, for /api/debug — lets us see exactly
 // what TDX returns without guessing field names blind.
 export async function fetchTrafficRaw(): Promise<unknown> {
-  const clientId = process.env.TDX_CLIENT_ID;
-  const clientSecret = process.env.TDX_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
-    throw new Error("TDX_CLIENT_ID / TDX_CLIENT_SECRET not configured");
-  }
-  const token = await getToken(clientId, clientSecret);
+  const token = await getTdxToken();
   return fetchJson<unknown>(INCIDENT_URL, { headers: { Authorization: `Bearer ${token}` } });
 }
 
 export async function fetchTraffic() {
-  const clientId = process.env.TDX_CLIENT_ID;
-  const clientSecret = process.env.TDX_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
+  if (!hasTdxCredentials()) {
     return ok("traffic", NAME, demoData(), true);
   }
   try {
-    const token = await getToken(clientId, clientSecret);
+    const token = await getTdxToken();
     const raw = await fetchJson<unknown>(INCIDENT_URL, {
       headers: { Authorization: `Bearer ${token}` },
     });
