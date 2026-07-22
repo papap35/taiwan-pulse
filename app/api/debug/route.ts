@@ -9,6 +9,7 @@ import { fetchFireRaw } from "@/lib/sources/fire";
 import { fetchSecurityRaw } from "@/lib/sources/security";
 import { fetchSuspensionRaw } from "@/lib/sources/suspension";
 import { fetchEpidemicRaw } from "@/lib/sources/epidemic";
+import { fetchRoadNetworkRaw } from "@/lib/sources/roadNetwork";
 import { fetchGridStatusRaw } from "@/lib/gridStatus";
 
 // Diagnostic-only endpoint: returns each source's UNTRANSFORMED upstream
@@ -39,6 +40,9 @@ const SOURCES: Record<string, () => Promise<unknown>> = {
   suspension: fetchSuspensionRaw,
   epidemic: fetchEpidemicRaw,
   gridStatus: fetchGridStatusRaw,
+  // Not wired into any real category yet — this is purely to let a real
+  // GeoJSON sample be pasted back and confirmed (see SPEC.md P2-6.5).
+  roadNetwork: fetchRoadNetworkRaw,
 };
 
 export async function GET(req: NextRequest) {
@@ -60,7 +64,16 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const raw = await fetcher();
+    // roadNetwork is the one source that takes query-string overrides
+    // (?roadName=國道3號&top=10) — useful for checking whether other roads'
+    // features carry the same properties before committing to a schema.
+    const raw =
+      source === "roadNetwork"
+        ? await fetchRoadNetworkRaw(
+            req.nextUrl.searchParams.get("roadName") ?? undefined,
+            Number(req.nextUrl.searchParams.get("top")) || undefined
+          )
+        : await fetcher();
     return NextResponse.json({ source, raw });
   } catch (err) {
     return NextResponse.json(

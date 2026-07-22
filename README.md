@@ -192,10 +192,14 @@ TDX 國道事件的**端點網址與回應欄位**都已由使用者實測確認
 /api/debug?source=traffic      → 回傳 TDX 國道事件「原始、未經任何欄位轉換」的回應
 /api/debug?source=flood        → 水利署河川水位的原始回應
 /api/debug?source=epidemic     → CDC 疫情監測（含實際比對到哪個 CKAN 資料集）
+/api/debug?source=roadNetwork  → TDX 路網 GIS 原始 GeoJSON（見 SPEC.md P2-6.5，
+                                  尚未併入任何分類事件，純粹用來確認欄位格式）
 ```
 
 可用的 `source` 值：`earthquake`、`weather`、`air`、`traffic`、`flood`、
-`reservoir`、`fire`、`security`、`suspension`、`epidemic`、`gridStatus`。
+`reservoir`、`fire`、`security`、`suspension`、`epidemic`、`gridStatus`、
+`roadNetwork`。`roadNetwork` 另外支援 `?roadName=`（預設「國道1號」，需自行
+URL 編碼中文路名）與 `?top=`（預設 5 筆）覆蓋查詢條件。
 
 畫面右下角「資料來源狀態」清單裡，每個來源都直接附了「查看原始回應」連結
 （`components/SourceStatusFooter.tsx`），對應到這裡的 `source` 值，不用自己
