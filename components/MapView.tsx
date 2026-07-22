@@ -1,8 +1,16 @@
 "use client";
 
-import { CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import {
+  CircleMarker,
+  MapContainer,
+  Marker,
+  Polyline,
+  Popup,
+  TileLayer,
+  useMap,
+} from "react-leaflet";
 import L from "leaflet";
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import { PulseEvent } from "@/lib/types";
 import { CATEGORY_COLORS, CATEGORY_SHAPE, SEVERITY_COLORS } from "@/lib/style";
 import { relativeTime, formatClock } from "@/lib/time";
@@ -91,33 +99,50 @@ export default function MapView({
       <FlyTo target={selected} />
       {located.map((e) => {
         const isSelected = e.id === selected?.id;
+        // A coarse road-direction segment (see traffic.ts
+        // approximateRouteSegment — not real road geometry), rendered under
+        // the marker so the point stays the click target and popup anchor.
+        const routeLine = e.route && (
+          <Polyline
+            positions={e.route.map((p) => [p.lat, p.lng])}
+            pathOptions={{
+              color: SEVERITY_COLORS[e.severity],
+              weight: isSelected ? 5 : 3,
+              opacity: 0.6,
+            }}
+          />
+        );
         if (CATEGORY_SHAPE[e.category] === "square") {
           return (
-            <Marker
-              key={e.id}
-              position={[e.location!.lat, e.location!.lng]}
-              icon={squareIcon(e, isSelected)}
-              eventHandlers={{ click: () => onSelect(e) }}
-            >
-              <EventPopup e={e} />
-            </Marker>
+            <Fragment key={e.id}>
+              {routeLine}
+              <Marker
+                position={[e.location!.lat, e.location!.lng]}
+                icon={squareIcon(e, isSelected)}
+                eventHandlers={{ click: () => onSelect(e) }}
+              >
+                <EventPopup e={e} />
+              </Marker>
+            </Fragment>
           );
         }
         return (
-          <CircleMarker
-            key={e.id}
-            center={[e.location!.lat, e.location!.lng]}
-            radius={isSelected ? 11 : 8}
-            pathOptions={{
-              color: SEVERITY_COLORS[e.severity],
-              weight: 2,
-              fillColor: CATEGORY_COLORS[e.category],
-              fillOpacity: 0.85,
-            }}
-            eventHandlers={{ click: () => onSelect(e) }}
-          >
-            <EventPopup e={e} />
-          </CircleMarker>
+          <Fragment key={e.id}>
+            {routeLine}
+            <CircleMarker
+              center={[e.location!.lat, e.location!.lng]}
+              radius={isSelected ? 11 : 8}
+              pathOptions={{
+                color: SEVERITY_COLORS[e.severity],
+                weight: 2,
+                fillColor: CATEGORY_COLORS[e.category],
+                fillOpacity: 0.85,
+              }}
+              eventHandlers={{ click: () => onSelect(e) }}
+            >
+              <EventPopup e={e} />
+            </CircleMarker>
+          </Fragment>
         );
       })}
     </MapContainer>
