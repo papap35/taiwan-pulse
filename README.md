@@ -150,11 +150,19 @@ join、依門檻算出嚴重程度（`severityFromLevels()`，已有測試涵蓋
 （`lib/sources/util.ts`，把 `err.cause` 一路串出來，不再只印 `err.message`）
 讓真正的錯誤第一次現形：`UND_ERR_CONNECT_TIMEOUT`，代表 TCP 連線本身在
 10 秒內建立不起來，是網路層被擋，不是慢。專案先前沒有指定 Vercel
-serverless function 的執行地區（預設美國 `iad1`），已在四個
-`app/api/*/route.ts` 加上 `export const preferredRegion = "hnd1"`（東京，
-離台灣最近的 Vercel 地區）——這是跟前四次修法不同類的嘗試，如果部署後
-還是同樣的 `UND_ERR_CONNECT_TIMEOUT`，代表擋的可能是整個雲端 IP 段、
-跟地區無關，屆時應該停止再猜，直接把這個來源標記為已知限制。
+serverless function 的執行地區（預設美國 `iad1`），試過加上
+`export const preferredRegion = "hnd1"`（東京，離台灣最近的 Vercel
+地區），使用者重新部署驗證後**仍是同樣的 `UND_ERR_CONNECT_TIMEOUT`**。
+
+**已知限制（不再繼續嘗試修連線）**：連同先前的重試邏輯、逾時拉長、
+`maxDuration`、User-Agent 四種修法，總共五種不同類的嘗試都無法讓
+Vercel 連到 `od.cdc.gov.tw`，判斷是該網域對雲端服務商 IP 段的防火牆限制，
+不分地區，不是程式邏輯能修的問題。`epidemic.ts` 的資料解析／聚合／
+週趨勢邏輯本身已用真實資料驗證過、有完整測試覆蓋，程式碼維持原樣——
+之後如果這個網域對外開放、或找到其他能連上的資料來源，直接改
+`CDC_RODS_URL`/`CDC_NHI_URL` 指向新位置即可，不需要重寫解析邏輯。這個
+類別目前會持續顯示清楚標示的 demo 資料，要看真實數據請直接查閱
+`od.cdc.gov.tw` 或疾管署官網。
 
 TDX 國道事件的**端點網址與回應欄位**都已由使用者實測確認（透過 `/api/debug`
 取得真實回應）：端點是 `/v1/Traffic/RoadEvent/LiveEvent/Freeway`，座標欄位是
