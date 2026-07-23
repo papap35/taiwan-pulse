@@ -245,6 +245,28 @@ fetch，也不需要金鑰），且是不同網域（`od.cdc.gov.tw` 而非
 專屬來源，是刻意的取捨。嚴重程度門檻（急診就診人次 ≥80/30/10）是照
 2026 年第 28 週真實資料（六都介於 43～96 人次之間）校準的實務近似值，
 不是官方警戒標準。
+
+**再再次更新（`od.cdc.gov.tw` 部署後也回報 `fetch failed`）**：`/api/debug`
+原本只印 `err.message`，Node 的 `fetch failed` 對所有連線層級錯誤都是同一句
+話，看不出真正原因。加上 `describeError()`（見 T3 尾段）把 `err.cause`
+串出來後，實際錯誤是：
+```
+fetch failed ← caused by: Connect Timeout Error
+(attempted address: od.cdc.gov.tw:443, timeout: 10000ms) (UND_ERR_CONNECT_TIMEOUT)
+```
+`UND_ERR_CONNECT_TIMEOUT` 代表 **TCP 三向交握本身**在 10 秒內完成不了——連
+HTTP request 都還沒發出去，不是「伺服器回應慢」。這個 10000ms 是 undici
+內建的連線逾時，跟我們自己設的 `CDC_TIMEOUT_MS`／`fetchWithRetry` 的
+AbortController 逾時是兩回事，代表就算再調長我們自己的逾時也沒用。判斷：
+封包在網路層被丟棄（黑洞），是防火牆／地區限制的典型特徵。專案先前完全
+沒有設定 Vercel serverless function 的執行地區，預設會是美國（`iad1`），
+而台灣許多政府網站對非台灣／雲端服務商來源 IP 有防火牆層級限制，這個現象
+完全吻合。已在四個 `app/api/*/route.ts` 都加上 `export const preferredRegion
+= "hnd1"`（東京，Vercel 提供離台灣最近的地區），這是跟前面四次 CDC 修法
+不同類的修正——那四次都是應用層調整，連線都建立不起來時完全碰不到。
+**這次是否真的解決還沒驗證**，需要使用者重新部署後回報結果；如果還是
+`UND_ERR_CONNECT_TIMEOUT`，代表擋的可能是整個雲端 IP 段（不分地區），
+屆時應該停止再猜，把 CDC 疫情監測正式標記為已知限制。
 **優先級理由**：公衛是明確的災害監控需求，且資料來源穩定（政府法定通報）
 
 #### 3. 水庫蓄水率 `[x]`
@@ -515,6 +537,15 @@ TDX 的 `Authorization`，優先權更高、不會被蓋掉）——這不是假
 `od.cdc.gov.tw`（不同網域的靜態 JSON 檔案，使用者自己在瀏覽器找到）取代
 整個 CKAN 流程，實測連得到——證實了「同一個機關、換一個網域就通」的判斷，
 而不是「疾管署的資料全部連不到」。
+
+**`od.cdc.gov.tw` 部署後，`/api/debug?source=epidemic` 只印出 `fetch
+failed`，看不出真正原因**——這是 Node 的通用連線層級錯誤訊息，實際原因
+（DNS/連線被拒/逾時）藏在 `err.cause` 裡，`fail()` 與 `/api/debug` 的
+catch block 都只讀了 `err.message`。新增 `lib/sources/util.ts` 的
+`describeError()`，把 `cause` 鏈路一路串出來（最多 5 層，附上錯誤代碼如
+`ECONNREFUSED`），取代所有地方的 `err.message`。串出來後，真正的錯誤是
+`UND_ERR_CONNECT_TIMEOUT`——見 P1-2 尾段，代表連線本身建立不起來，判斷是
+地區防火牆問題，已加上 `preferredRegion = "hnd1"`。
 
 ### T4. 漸進式資料載入（拆分 `/api/events`）`[x]`
 

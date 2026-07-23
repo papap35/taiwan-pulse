@@ -24,7 +24,9 @@ import { describeError } from "@/lib/sources/util";
 // not part of the app's normal request path, so it intentionally skips the
 // ISR caching used by /api/events.
 export const dynamic = "force-dynamic";
-// epidemic's two-hop CKAN flow can take up to ~50s worst case (see
+// See app/api/events/route.ts for why.
+export const preferredRegion = "hnd1";
+// epidemic.ts fetches two parallel multi-MB JSON files (see
 // lib/sources/epidemic.ts) — this is exactly the endpoint used to diagnose
 // that kind of issue, so it needs the same headroom as the real routes.
 export const maxDuration = 60;
