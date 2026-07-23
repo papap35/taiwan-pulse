@@ -11,6 +11,7 @@ import { fetchSuspensionRaw } from "@/lib/sources/suspension";
 import { fetchEpidemicRaw } from "@/lib/sources/epidemic";
 import { fetchRoadNetworkRaw } from "@/lib/sources/roadNetwork";
 import { fetchGridStatusRaw } from "@/lib/gridStatus";
+import { describeError } from "@/lib/sources/util";
 
 // Diagnostic-only endpoint: returns each source's UNTRANSFORMED upstream
 // response, exactly as the government API sent it, bypassing our own
@@ -76,9 +77,11 @@ export async function GET(req: NextRequest) {
         : await fetcher();
     return NextResponse.json({ source, raw });
   } catch (err) {
-    return NextResponse.json(
-      { source, error: err instanceof Error ? err.message : String(err) },
-      { status: 502 }
-    );
+    // describeError() walks err.cause — Node's fetch throws a generic
+    // "TypeError: fetch failed" for every connection-level failure, with the
+    // actually-useful reason (ECONNRESET, ENOTFOUND, a timeout, ...) nested
+    // one level down. A bare err.message was hiding exactly the detail this
+    // diagnostic endpoint exists to surface.
+    return NextResponse.json({ source, error: describeError(err) }, { status: 502 });
   }
 }

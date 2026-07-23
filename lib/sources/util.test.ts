@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { pick, safeIso, safeIsoOrUndefined, fetchJson, parseNum, unwrapRecords } from "./util";
+import {
+  pick,
+  safeIso,
+  safeIsoOrUndefined,
+  fetchJson,
+  parseNum,
+  unwrapRecords,
+  describeError,
+} from "./util";
 
 describe("pick", () => {
   it("正常情況：完全比對的鍵名直接命中", () => {
@@ -208,5 +216,37 @@ describe("unwrapRecords", () => {
     expect(unwrapRecords({ foo: "bar" })).toEqual([]);
     expect(unwrapRecords(null)).toEqual([]);
     expect(unwrapRecords(undefined)).toEqual([]);
+  });
+});
+
+describe("describeError", () => {
+  it("正常情況：沒有 cause 時只回傳 message", () => {
+    expect(describeError(new Error("plain error"))).toBe("plain error");
+  });
+
+  it("【防迴歸】真實情況：Node fetch 失敗時 message 永遠是 \"fetch failed\"，真正原因藏在 cause 裡——必須把 cause 串出來，不能只看 message", () => {
+    const cause = Object.assign(new Error("connect ECONNREFUSED 1.2.3.4:443"), {
+      code: "ECONNREFUSED",
+    });
+    const err = new TypeError("fetch failed", { cause });
+    expect(describeError(err)).toBe(
+      "fetch failed ← caused by: connect ECONNREFUSED 1.2.3.4:443 (ECONNREFUSED)"
+    );
+  });
+
+  it("正常情況：多層 cause 會依序串接", () => {
+    const root = new Error("root cause");
+    const middle = new Error("middle cause", { cause: root });
+    const err = new Error("top error", { cause: middle });
+    expect(describeError(err)).toBe("top error ← caused by: middle cause ← caused by: root cause");
+  });
+
+  it("邊界情況：cause 不是 Error 物件時仍能印出來", () => {
+    const err = new Error("top error", { cause: "a plain string cause" });
+    expect(describeError(err)).toBe("top error ← caused by: a plain string cause");
+  });
+
+  it("邊界情況：不是 Error 的輸入直接轉字串", () => {
+    expect(describeError("just a string")).toBe("just a string");
   });
 });
