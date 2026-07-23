@@ -40,7 +40,7 @@ npm run dev
 | 火災消防 | 新聞 RSS 關鍵字過濾 | 需要至少一組 RSS 來源 | 任一新聞/警廣 RSS |
 | 治安快訊 | 新聞 RSS 關鍵字過濾 | 需要至少一組 RSS 來源 | 同上 |
 | 停班停課 | 國家災害防救科技中心 (NCDR) 天然災害停止上班上課 RSS 公告 | 不需金鑰，**預設直接啟用** | https://alerts.ncdr.nat.gov.tw/ |
-| 疫情監測（與空氣品質共用色相，方形標記） | 疾病管制署 法定傳染病監測，登革熱/流感/腸病毒/COVID 超過門檻才顯示 | 不需金鑰，**預設直接啟用**（自動搜尋 CKAN 資料集） | https://data.cdc.gov.tw/ |
+| 疫情監測（與空氣品質共用色相，方形標記） | 疾病管制署 COVID-19 急診/健保就診人次監測（依縣市、跟上週比漲跌） | 不需金鑰，**預設直接啟用** | https://od.cdc.gov.tw/eic/RODS_COVID-19.json |
 | 電力供需燈號（獨立橫幅，非分類事件） | 台灣電力公司 電力供需即時資料 | 預設免金鑰，但需確認實際端點 | 見下方說明 |
 
 ### 為什麼「治安」類別是新聞快訊，不是官方即時個案資料？
@@ -129,14 +129,22 @@ join、依門檻算出嚴重程度（`severityFromLevels()`，已有測試涵蓋
 工具都是 403），如果部署後這個來源持續是 0 筆，麻煩貼一次
 `/api/debug?source=suspension` 的實際回應。
 
-`lib/sources/epidemic.ts`（疫情監測）不在上面這份「請自行核對」清單裡——
-使用者提供了疾病管制署官方的 OpenAPI 規格文件後，確認 CDC 開放資料平台是
-標準 **CKAN** 系統，`https://data.cdc.gov.tw/api/3` 的 `package_search`／
-`datastore_search` 是 CKAN 本身文件化、穩定的標準 API（不是台灣政府自訂、
-需要用猜的），所以這個來源改成**兩段式自動搜尋**（先搜尋「法定傳染病」資料集，
-再抓取實際資料），預設就會啟用、不需要你先手動找網址。真正還沒驗證的只剩
-資料集裡「病例數」「縣市」「疾病名稱」這些**欄位名稱**本身，如果解析不到符合
-的資料會保持顯示 0 筆或退回示範資料，見 SPEC.md P1-2 的更新說明。
+**`lib/sources/epidemic.ts` 的資料來源整個換過一次網域**：原本用
+`https://data.cdc.gov.tw/`（CKAN `package_search`／`datastore_search`）
+確認 API 本身是標準、文件化的，但正式環境從頭到尾連不上——依序試過重試
+邏輯修正、逾時從 10 秒拉長到 25 秒、`maxDuration=60`、加瀏覽器 User-Agent
+四種修法，每次使用者重新部署驗證都仍是 `fetch failed`，判斷是這個網域本身
+在網路層被擋，不是程式邏輯能修的問題。使用者接著自己在瀏覽器找到
+`https://od.cdc.gov.tw/eic/RODS_COVID-19.json`（急診 COVID-19 就診人次）與
+`https://od.cdc.gov.tw/eic/NHI_COVID-19.json`（健保門診/住院 COVID-19
+就診人次）——**不同網域**、**純靜態 JSON 檔案**（不是 CKAN，不需要搜尋
+再抓取，也不需要金鑰），實測後這次真的連得到。現在的 `epidemic.ts`
+平行抓這兩個檔案、自動找出資料裡最新的「年+週」，依縣市加總急診人次
+（跨年齡層）與健保門診/住院人次，並算出跟上一週相比的漲跌趨勢；嚴重程度
+門檻（急診就診人次 ≥80/30/10）是照真實資料校準的實務近似值，不是官方
+警戒標準。**代價**：原本監控登革熱／流感／腸病毒的部分被拿掉了，因為那些
+欄位名稱本來就從未在真實資料上驗證過——現在換成專注 COVID-19、且欄位已
+用真實資料確認過的來源，見 SPEC.md P1-2 的更新說明。
 
 TDX 國道事件的**端點網址與回應欄位**都已由使用者實測確認（透過 `/api/debug`
 取得真實回應）：端點是 `/v1/Traffic/RoadEvent/LiveEvent/Freeway`，座標欄位是
@@ -191,7 +199,7 @@ TDX 國道事件的**端點網址與回應欄位**都已由使用者實測確認
 /api/debug                     → 列出所有可查詢的來源名稱
 /api/debug?source=traffic      → 回傳 TDX 國道事件「原始、未經任何欄位轉換」的回應
 /api/debug?source=flood        → 水利署河川水位的原始回應
-/api/debug?source=epidemic     → CDC 疫情監測（含實際比對到哪個 CKAN 資料集）
+/api/debug?source=epidemic     → CDC 疫情監測（od.cdc.gov.tw 的急診/健保兩份原始 JSON）
 /api/debug?source=roadNetwork  → TDX 路網 GIS 原始 GeoJSON（見 SPEC.md P2-6.5，
                                   尚未併入任何分類事件，純粹用來確認欄位格式）
 ```
