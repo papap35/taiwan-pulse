@@ -1,51 +1,51 @@
 import { PulseEvent, Severity } from "@/lib/types";
 import { countyCentroid } from "@/lib/counties";
-import { fetchJson, ok, fail, pick, safeIso } from "./util";
+import { fetchJson, ok, fail, parseNum } from "./util";
 
-// This source's flow (package_search -> datastore_search, or a raw-file
-// fallback for non-datastore resources) is inherently slower than a single
-// simple API call, and the raw-file fallback in particular has no size
-// limit — CDC's own notifiable-disease export can be a large historical
-// file. A user reported "This operation was aborted" against the default
-// 10s timeout; giving this specific two-hop flow more headroom than most
-// single-call sources need.
-const CDC_TIMEOUT_MS = 25000;
+const NAME = "疾病管制署 - COVID-19 監測";
 
-const NAME = "疾病管制署 - 法定傳染病監測";
+// Confirmed by the user (2026-07-23): od.cdc.gov.tw hosts these as plain
+// static JSON files — no CKAN search/datastore indirection, no auth. This
+// replaces the previous data.cdc.gov.tw CKAN-search approach entirely, which
+// never actually connected in production (see SPEC.md P0-1/T3) regardless of
+// timeout/retry/User-Agent fixes. Trade-off: this is COVID-19-specific (the
+// old MONITORED multi-disease table — 登革熱/流感/腸病毒 — is dropped), but
+// that table's field names were themselves unconfirmed guesses that never
+// got to run against real data anyway.
+const CDC_TIMEOUT_MS = 20000; // each file is a full historical export (MB-sized), not a small API response
 
-// Confirmed via CDC's own published OpenAPI spec (user-provided, 2026-07-15):
-// the CDC open data portal is a standard CKAN instance at this base URL.
-// CKAN's action API (package_search, datastore_search) is documented,
-// stable, open-source software — not a Taiwan-specific guess — so this
-// source can default to "on" without requiring the user to hunt down a
-// specific dataset URL first, unlike the previous single-URL approach.
-const CDC_API_BASE = process.env.CDC_API_BASE ?? "https://data.cdc.gov.tw/api/3";
-// CKAN full-text search query used to locate the notifiable-disease
-// dataset. Override if this doesn't land on the right package.
-const SEARCH_QUERY = process.env.CDC_EPIDEMIC_SEARCH ?? "法定傳染病";
+// Functions, not module-level constants — a top-level `const X = process.env.Y`
+// reads the env var once at import time, which breaks `vi.stubEnv` in tests
+// (exactly the bug this codebase already got burned by once, in flood.ts's
+// stationInfoUrl()).
+function rodsUrl(): string {
+  return process.env.CDC_RODS_URL ?? "https://od.cdc.gov.tw/eic/RODS_COVID-19.json";
+}
+function nhiUrl(): string {
+  return process.env.CDC_NHI_URL ?? "https://od.cdc.gov.tw/eic/NHI_COVID-19.json";
+}
 
-// Diseases the public most commonly cares about, with a rough "newsworthy"
-// weekly case-count threshold. This is a practical approximation, not an
-// official CDC alert threshold. The dataset's own column names are still a
-// guess (see SPEC.md P0-1) — only the CKAN search/fetch mechanism itself is
-// confirmed correct.
-const MONITORED: { keyword: string; threshold: number; severity: Severity }[] = [
-  { keyword: "登革熱", threshold: 1, severity: "serious" }, // 本土病例即具新聞性
-  { keyword: "流感", threshold: 50, severity: "warning" },
-  { keyword: "腸病毒", threshold: 30, severity: "warning" },
-  { keyword: "COVID", threshold: 100, severity: "warning" },
-];
+// Both files are flat arrays of weekly per-county-per-age-group records
+// going back to 2021/2022 (confirmed against real data pasted by the user)
+// — not a "current status" snapshot — so this source has to find the latest
+// week itself and aggregate across age groups (and, for NHI, 就診類別).
+interface WeeklyRecord {
+  年: string;
+  週: string;
+  縣市: string;
+  [key: string]: string;
+}
 
 function demoData(): PulseEvent[] {
   return [
     {
       id: "demo-epidemic-1",
       category: "epidemic",
-      title: "高雄市 登革熱本土病例 4 例（示範資料）",
-      description: "近一週新增本土病例，請落實住家及周邊孳生源巡檢",
-      severity: "serious",
-      county: "高雄市",
-      location: countyCentroid("高雄市"),
+      title: "台北市 COVID-19 急診就診 96 人次（示範資料）",
+      description: "較上週 +33%，健保門診 605 人次、住院 13 人次（第 2026 年第 28 週）",
+      severity: "critical",
+      county: "台北市",
+      location: countyCentroid("台北市"),
       time: new Date(Date.now() - 1000 * 60 * 200).toISOString(),
       source: NAME,
       isDemo: true,
@@ -53,132 +53,128 @@ function demoData(): PulseEvent[] {
   ];
 }
 
-interface CkanResource {
-  id: string;
-  format?: string;
-  datastore_active?: boolean;
-  url?: string;
-}
-
-interface CkanPackage {
-  name: string;
-  resources?: CkanResource[];
-}
-
-interface CkanSearchResponse {
-  success?: boolean;
-  result?: { count?: number; results?: CkanPackage[] };
-}
-
-interface CkanDatastoreResponse {
-  success?: boolean;
-  result?: { records?: Record<string, unknown>[] };
-}
-
-// Two-step CKAN flow: find the dataset by search, then read its data —
-// either through CKAN's own queryable datastore (preferred) or by fetching
-// the resource's raw file URL (CSV/JSON) directly.
-async function fetchViaCkanSearch(): Promise<Record<string, unknown>[]> {
-  const searchUrl = `${CDC_API_BASE}/action/package_search?q=${encodeURIComponent(SEARCH_QUERY)}`;
-  const search = await fetchJson<CkanSearchResponse>(searchUrl, undefined, CDC_TIMEOUT_MS);
-  const pkg = search.result?.results?.[0];
-  if (!pkg) throw new Error(`no CKAN package found for query "${SEARCH_QUERY}"`);
-
-  const resource = pkg.resources?.find((r) => r.datastore_active) ?? pkg.resources?.[0];
-  if (!resource) throw new Error(`CKAN package "${pkg.name}" has no resources`);
-
-  if (resource.datastore_active) {
-    const dsUrl = `${CDC_API_BASE}/action/datastore_search?resource_id=${resource.id}&limit=500`;
-    const ds = await fetchJson<CkanDatastoreResponse>(dsUrl, undefined, CDC_TIMEOUT_MS);
-    return ds.result?.records ?? [];
+export function latestYearWeek(
+  records: WeeklyRecord[]
+): { year: number; week: number } | undefined {
+  let best: { year: number; week: number } | undefined;
+  for (const r of records) {
+    const year = parseInt(r["年"], 10);
+    const week = parseInt(r["週"], 10);
+    if (!Number.isFinite(year) || !Number.isFinite(week)) continue;
+    if (!best || year > best.year || (year === best.year && week > best.week)) {
+      best = { year, week };
+    }
   }
-
-  if (!resource.url) {
-    throw new Error(`CKAN resource "${resource.id}" has no url and is not datastore-active`);
-  }
-  const raw = await fetchJson<unknown>(resource.url, undefined, CDC_TIMEOUT_MS);
-  return Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+  return best;
 }
 
-// Untransformed upstream response, for /api/debug. More elaborate than the
-// other sources' raw fetchers since this one is two-step (search, then
-// fetch) — showing which CKAN package/resource got matched is as useful for
-// debugging as the records themselves.
+export function previousYearWeek(year: number, week: number): { year: number; week: number } {
+  return week > 1 ? { year, week: week - 1 } : { year: year - 1, week: 52 };
+}
+
+// CDC's weekly datasets carry a year+epidemiological-week pair, not an exact
+// calendar date. This approximates the week's start purely so events sort
+// chronologically and the freshness badge has something to compare against —
+// it isn't meant to reproduce CDC's own week-boundary definition exactly.
+export function yearWeekToIso(year: number, week: number): string {
+  const jan1 = Date.UTC(year, 0, 1);
+  return new Date(jan1 + (week - 1) * 7 * 24 * 60 * 60 * 1000).toISOString();
+}
+
+// Practical display thresholds, not an official CDC alert level (same
+// caveat as the old MONITORED table) — calibrated against real 2026-W28
+// data, where the six largest cities all sat between 43 and 96 weekly ER
+// visits nationwide.
+export function severityFromErVisits(count: number): Severity | undefined {
+  if (count >= 80) return "critical";
+  if (count >= 30) return "serious";
+  if (count >= 10) return "warning";
+  return undefined;
+}
+
+export function sumByCounty(
+  records: WeeklyRecord[],
+  year: number,
+  week: number,
+  valueKey: string,
+  filter?: (r: WeeklyRecord) => boolean
+): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const r of records) {
+    if (parseInt(r["年"], 10) !== year || parseInt(r["週"], 10) !== week) continue;
+    if (filter && !filter(r)) continue;
+    const county = r["縣市"];
+    if (!county) continue;
+    const n = parseNum(r[valueKey]) ?? 0;
+    totals.set(county, (totals.get(county) ?? 0) + n);
+  }
+  return totals;
+}
+
+// Untransformed upstream responses, for /api/debug. These are the full
+// historical exports (MB-sized) rather than a trimmed sample — consistent
+// with every other source's raw fetcher showing exactly what the government
+// API returns, but worth knowing before hitting this in a browser.
 export async function fetchEpidemicRaw(): Promise<unknown> {
-  const manualUrl = process.env.CDC_EPIDEMIC_URL;
-  if (manualUrl) {
-    return fetchJson<unknown>(manualUrl, undefined, CDC_TIMEOUT_MS);
-  }
-  const searchUrl = `${CDC_API_BASE}/action/package_search?q=${encodeURIComponent(SEARCH_QUERY)}`;
-  const search = await fetchJson<CkanSearchResponse>(searchUrl, undefined, CDC_TIMEOUT_MS);
-  const pkg = search.result?.results?.[0];
-  if (!pkg) return { searchUrl, search };
-
-  const resource = pkg.resources?.find((r) => r.datastore_active) ?? pkg.resources?.[0];
-  if (!resource) return { searchUrl, matchedPackage: pkg.name, resources: pkg.resources };
-
-  if (resource.datastore_active) {
-    const dsUrl = `${CDC_API_BASE}/action/datastore_search?resource_id=${resource.id}&limit=20`;
-    const ds = await fetchJson<CkanDatastoreResponse>(dsUrl, undefined, CDC_TIMEOUT_MS);
-    return {
-      searchUrl,
-      matchedPackage: pkg.name,
-      resourceId: resource.id,
-      dsUrl,
-      sampleRecords: ds.result?.records?.slice(0, 5),
-    };
-  }
-  return { searchUrl, matchedPackage: pkg.name, resourceUrl: resource.url };
+  const [rods, nhi] = await Promise.all([
+    fetchJson<unknown>(rodsUrl(), undefined, CDC_TIMEOUT_MS),
+    fetchJson<unknown>(nhiUrl(), undefined, CDC_TIMEOUT_MS),
+  ]);
+  return { rods, nhi };
 }
 
 export async function fetchEpidemic() {
   try {
-    // CDC_EPIDEMIC_URL stays as a manual override: set it if you've already
-    // found the exact dataset resource yourself and want to skip the search
-    // step entirely.
-    const manualUrl = process.env.CDC_EPIDEMIC_URL;
-    let records: Record<string, unknown>[];
-    if (manualUrl) {
-      const raw = await fetchJson<unknown>(manualUrl, undefined, CDC_TIMEOUT_MS);
-      records = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
-    } else {
-      records = await fetchViaCkanSearch();
-    }
+    const [rods, nhi] = await Promise.all([
+      fetchJson<WeeklyRecord[]>(rodsUrl(), undefined, CDC_TIMEOUT_MS),
+      fetchJson<WeeklyRecord[]>(nhiUrl(), undefined, CDC_TIMEOUT_MS),
+    ]);
+
+    const latest = latestYearWeek(rods);
+    if (!latest) return ok("epidemic", NAME, [], false);
+    const prev = previousYearWeek(latest.year, latest.week);
+    const time = yearWeekToIso(latest.year, latest.week);
+
+    const erLatest = sumByCounty(rods, latest.year, latest.week, "COVID-19急診就診人次");
+    const erPrev = sumByCounty(rods, prev.year, prev.week, "COVID-19急診就診人次");
+    const hospLatest = sumByCounty(
+      nhi,
+      latest.year,
+      latest.week,
+      "COVID-19健保就診人次",
+      (r) => r["就診類別"] === "住院"
+    );
+    const outpatientLatest = sumByCounty(
+      nhi,
+      latest.year,
+      latest.week,
+      "COVID-19健保就診人次",
+      (r) => r["就診類別"] === "門診"
+    );
 
     const events: PulseEvent[] = [];
-    for (const r of records) {
-      const diseaseName = String(
-        pick(r, "DiseaseName", "disease", "疾病名稱", "確定病名") ?? ""
-      );
-      const monitor = MONITORED.find((m) => diseaseName.includes(m.keyword));
-      if (!monitor) continue; // only surface diseases we explicitly track
+    for (const [county, erCount] of erLatest) {
+      const severity = severityFromErVisits(erCount);
+      if (!severity) continue; // below the display threshold — normal, not newsworthy
 
-      const countRaw = pick(r, "Cases", "case_count", "病例數", "確定病例數", "Count");
-      const count = typeof countRaw === "string" ? parseInt(countRaw, 10) : Number(countRaw);
-      if (!Number.isFinite(count) || count < monitor.threshold) continue;
+      const prevCount = erPrev.get(county) ?? 0;
+      const trendPct = prevCount > 0 ? Math.round(((erCount - prevCount) / prevCount) * 100) : undefined;
+      const trendText = trendPct === undefined ? "" : `較上週 ${trendPct >= 0 ? "+" : ""}${trendPct}%，`;
+      const hosp = hospLatest.get(county) ?? 0;
+      const outpatient = outpatientLatest.get(county) ?? 0;
 
-      const county = String(pick(r, "County", "county", "縣市", "居住縣市") ?? "");
-      const time = pick(
-        r,
-        "PublishDate",
-        "publish_date",
-        "week",
-        "WeekEndDate",
-        "通報日",
-        "個案研判日"
-      ) as string | undefined;
       events.push({
-        id: `epidemic-${diseaseName}-${county}-${time ?? Date.now()}`,
+        id: `epidemic-${county}-${latest.year}W${latest.week}`,
         category: "epidemic",
-        title: `${county} ${diseaseName} ${count} 例`,
-        severity: monitor.severity,
+        title: `${county} COVID-19 急診就診 ${erCount} 人次`,
+        description: `${trendText}健保門診 ${outpatient} 人次、住院 ${hosp} 人次（第 ${latest.year} 年第 ${latest.week} 週）`,
+        severity,
         county,
         location: countyCentroid(county),
-        time: safeIso(time),
+        time,
         source: NAME,
       });
     }
-    if (events.length === 0) return ok("epidemic", NAME, [], false);
     return ok("epidemic", NAME, events, false);
   } catch (err) {
     return fail("epidemic", NAME, err, demoData());
