@@ -2,17 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { CATEGORY_SOURCES, fetchCategory } from "@/lib/sourceRegistry";
 import { CATEGORY_ORDER, Category } from "@/lib/types";
 
+// See app/api/events/route.ts for why — same reasoning applies per-category.
+export const preferredRegion = "hnd1";
+
 // Same ISR window as the combined /api/events aggregate — each category's
 // upstream fetches already carry their own Next Data Cache entry
 // (REVALIDATE_SECONDS in lib/sources/util.ts), so splitting the route
 // doesn't change how often the government APIs actually get hit.
 export const revalidate = 120;
 
-// epidemic's two-hop CKAN flow (package_search then datastore_search, or a
-// raw-file fallback with no size limit) alone can take up to ~50s worst
-// case (2 calls x 25s timeout each, see lib/sources/epidemic.ts). Raising
-// this has no effect on plans that cap it lower, and no downside on plans
-// that honor it.
+// Several sources fetch large files or chain multiple calls (e.g. flood.ts's
+// realtime+station-info join, epidemic.ts's two parallel multi-MB JSON
+// files, see lib/sources/epidemic.ts). Raising this has no effect on plans
+// that cap it lower, and no downside on plans that honor it.
 export const maxDuration = 60;
 
 // All 9 categories are known at build time, so pre-generate a static param
