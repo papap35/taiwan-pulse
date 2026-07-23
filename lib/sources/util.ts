@@ -180,6 +180,31 @@ export function ok(
   };
 }
 
+// Node's fetch throws a generic `TypeError: fetch failed` for every
+// connection-level failure (DNS, TLS, connection reset, timeout) — the
+// actually-useful detail (e.g. ECONNRESET, ENOTFOUND, or a timeout) lives one
+// level down in `err.cause`, which a bare `.message` read discards entirely.
+// Confirmed as the exact gap blocking further CDC diagnosis: /api/debug
+// only ever showed "fetch failed" with nothing else to go on.
+export function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const parts = [err.message];
+  let cause: unknown = err.cause;
+  let depth = 0;
+  while (cause && depth < 5) {
+    if (cause instanceof Error) {
+      const code = (cause as NodeJS.ErrnoException).code;
+      parts.push(code ? `${cause.message} (${code})` : cause.message);
+      cause = cause.cause;
+    } else {
+      parts.push(String(cause));
+      break;
+    }
+    depth++;
+  }
+  return parts.join(" ← caused by: ");
+}
+
 export function fail(
   category: Category,
   name: string,
@@ -193,7 +218,7 @@ export function fail(
       name,
       ok: false,
       isDemo: true,
-      error: error instanceof Error ? error.message : String(error),
+      error: describeError(error),
       count: fallback.length,
       fetchedAt: new Date().toISOString(),
     },
