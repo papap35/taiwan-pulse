@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 // property (or be disabled) without a code change — same pattern as every
 // other external-service ID in this project. Falls back to the ID given at
 // setup time so it works out of the box.
-const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "G-Y8NYYK90ZD";
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "G-138NLJZCL1";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
