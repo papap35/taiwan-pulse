@@ -268,6 +268,11 @@ not configured`），這是預期行為，不是 bug。
   第 9 個類別疫情監測用複合編碼共用色相），嚴重程度另用四階固定的狀態色
   （灰／黃／橘／紅）並搭配圖示與文字，不單靠顏色傳達資訊；電力供需燈號直接
   沿用狀態色，不佔用分類色相。
+- 品牌識別（`components/Logo.tsx`、`app/icon.svg`）：圓角方塊＋心跳線的 App
+  icon 風格標記，色彩用獨立的 `lib/style.ts` `BRAND_COLOR` 常數（跟
+  `earthquake` 分類色同色但刻意分開命名，避免之後調整分類色相時意外牽動
+  logo）。`app/icon.svg` 是 Next.js App Router 的檔案慣例（放在 `app/` 根目錄
+  即自動變成 favicon，不需要額外設定 `metadata.icons`）。
 
 ### 交通事件的路段近似線段
 

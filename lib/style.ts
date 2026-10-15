@@ -1,5 +1,12 @@
 import { Category, GridStatusLevel, Severity } from "@/lib/types";
 
+// The app's own brand mark color (components/Logo.tsx, app/icon.svg) — same
+// hex as the earthquake category slot below, but kept as a separate, named
+// constant on purpose: the logo represents the whole product, not one
+// category, so it shouldn't silently drift if earthquake's hue is ever
+// reassigned for dataviz reasons.
+export const BRAND_COLOR = "#2a78d6";
+
 // Categorical hues — fixed order, never reassigned/cycled (dataviz color-formula rule).
 // Only 8 fixed slots exist. A 9th category never gets a generated hue — it
 // reuses the semantically closest existing slot and gets a distinct marker
