@@ -1,4 +1,5 @@
 import { relativeTime } from "@/lib/time";
+import Logo from "@/components/Logo";
 
 export default function Header({
   generatedAt,
@@ -11,11 +12,14 @@ export default function Header({
 }) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-gridline-light px-4 py-3 dark:border-gridline-dark sm:px-6">
-      <div>
-        <h1 className="text-lg font-semibold sm:text-xl">Taiwan Pulse 台灣即時監控</h1>
-        <p className="text-sm text-ink-secondary-light dark:text-ink-secondary-dark">
-          地震・天氣特報・空氣品質・交通・水利淹水・火災・治安快訊・停班停課・疫情監測
-        </p>
+      <div className="flex items-center gap-3">
+        <Logo size={36} className="shrink-0" />
+        <div>
+          <h1 className="text-lg font-semibold sm:text-xl">Taiwan Pulse 台灣即時監控</h1>
+          <p className="text-sm text-ink-secondary-light dark:text-ink-secondary-dark">
+            地震・天氣特報・空氣品質・交通・水利淹水・火災・治安快訊・停班停課・疫情監測
+          </p>
+        </div>
       </div>
       <div className="flex items-center gap-3 text-sm text-ink-secondary-light dark:text-ink-secondary-dark">
         {generatedAt && <span>資料更新：{relativeTime(generatedAt)}</span>}
