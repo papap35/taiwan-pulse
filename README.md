@@ -37,6 +37,7 @@ npm run dev
 | 交通事件 | TDX 運輸資料流通服務（國道事件） | 需要（免費 Client ID/Secret） | https://tdx.transportdata.tw/ |
 | 水利淹水 | 水利署即時水位 join 測站警戒門檻資料 | 不需金鑰，**端點與欄位已確認** | 見下方說明 |
 | 水庫蓄水率（併入水利淹水類別） | 水利署 水庫即時水情，蓄水率過低才會顯示 | 預設免金鑰，但需確認實際端點 | 見下方說明 |
+| 土石流警戒（併入水利淹水類別） | 農業部農村發展及水土保持署 土石流即時警戒 | 不需金鑰，**預設直接啟用**，但欄位未經真實驗證 | 見下方說明 |
 | 火災消防 | 新聞 RSS 關鍵字過濾 | 需要至少一組 RSS 來源 | 任一新聞/警廣 RSS |
 | 治安快訊 | 新聞 RSS 關鍵字過濾 | 需要至少一組 RSS 來源 | 同上 |
 | 停班停課 | 國家災害防救科技中心 (NCDR) 天然災害停止上班上課 RSS 公告 | 不需金鑰，**預設直接啟用** | https://alerts.ncdr.nat.gov.tw/ |
@@ -114,6 +115,18 @@ join、依門檻算出嚴重程度（`severityFromLevels()`，已有測試涵蓋
 一樣沒有百分比欄位，需要另一個「水庫容量上限」參考資料集才能算蓄水率，
 這個資料集的資源 ID 還沒找到，`lib/sources/reservoir.ts` 暫時維持原本的
 欄位猜測不變。
+
+**土石流警戒是目前唯一完全沒有真實回應可核對就上線的來源**：透過網路搜尋
+找到**農業部農村發展及水土保持署**在 `246.ardswc.gov.tw` 維運的土石流即時
+警戒 API（`GetAlertData.ashx`，不需金鑰），公開文件描述了大致回應型態（無
+警戒時 `{"errorMessage":"目前無警戒"}`，有警戒時是含縣市/鄉鎮/村里/發布
+時間的陣列），但這次沙盒環境連這個網域的 DNS 都查不到、本機 proxy 也直接
+拒絕連線，無法像 WRA／TDX／CDC 那樣貼一筆真實回應核對欄位名稱——
+`lib/sources/landslide.ts` 的欄位解析、紅/黃警戒等級判斷
+（`severityFromAlertText()`，比照 `weatherAlert.ts` 既有的「土石流紅色→
+危急」慣例）都還是根據公開文件描述做的最佳猜測。部署後如果這個來源持續是
+0 筆或示範資料，**這是預期中的狀態，不是 bug**，麻煩貼一次
+`/api/debug?source=landslide` 的實際回應，才能像其他來源一樣一次修對。
 
 **停班停課的資料來源整個換了**：原本猜測的
 `www.dgpa.gov.tw/typh/opendata/open.json` 使用者部署後回報 `HTTP 404`，
@@ -223,9 +236,9 @@ TDX 國道事件的**端點網址與回應欄位**都已由使用者實測確認
 ```
 
 可用的 `source` 值：`earthquake`、`weather`、`air`、`traffic`、`flood`、
-`reservoir`、`fire`、`security`、`suspension`、`epidemic`、`gridStatus`、
-`roadNetwork`。`roadNetwork` 另外支援 `?roadName=`（預設「國道1號」，需自行
-URL 編碼中文路名）與 `?top=`（預設 5 筆）覆蓋查詢條件。
+`reservoir`、`landslide`、`fire`、`security`、`suspension`、`epidemic`、
+`gridStatus`、`roadNetwork`。`roadNetwork` 另外支援 `?roadName=`（預設
+「國道1號」，需自行 URL 編碼中文路名）與 `?top=`（預設 5 筆）覆蓋查詢條件。
 
 畫面右下角「資料來源狀態」清單裡，每個來源都直接附了「查看原始回應」連結
 （`components/SourceStatusFooter.tsx`），對應到這裡的 `source` 值，不用自己

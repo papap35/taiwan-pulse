@@ -5,6 +5,7 @@ import { fetchAirQuality } from "@/lib/sources/airQuality";
 import { fetchTraffic } from "@/lib/sources/traffic";
 import { fetchFlood } from "@/lib/sources/flood";
 import { fetchReservoirLevels } from "@/lib/sources/reservoir";
+import { fetchLandslide } from "@/lib/sources/landslide";
 import { fetchFireEvents } from "@/lib/sources/fire";
 import { fetchSecurityEvents } from "@/lib/sources/security";
 import { fetchSuspension } from "@/lib/sources/suspension";
@@ -22,7 +23,7 @@ export const CATEGORY_SOURCES: Record<Category, SourceFetcher[]> = {
   weather: [fetchWeatherAlerts],
   air: [fetchAirQuality],
   traffic: [fetchTraffic],
-  flood: [fetchFlood, fetchReservoirLevels],
+  flood: [fetchFlood, fetchReservoirLevels, fetchLandslide],
   fire: [fetchFireEvents],
   security: [fetchSecurityEvents],
   suspension: [fetchSuspension],

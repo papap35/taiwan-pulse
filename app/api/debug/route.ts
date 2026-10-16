@@ -5,6 +5,7 @@ import { fetchAirQualityRaw } from "@/lib/sources/airQuality";
 import { fetchTrafficRaw } from "@/lib/sources/traffic";
 import { fetchFloodRaw } from "@/lib/sources/flood";
 import { fetchReservoirRaw } from "@/lib/sources/reservoir";
+import { fetchLandslideRaw } from "@/lib/sources/landslide";
 import { fetchFireRaw } from "@/lib/sources/fire";
 import { fetchSecurityRaw } from "@/lib/sources/security";
 import { fetchSuspensionRaw } from "@/lib/sources/suspension";
@@ -38,6 +39,7 @@ const SOURCES: Record<string, () => Promise<unknown>> = {
   traffic: fetchTrafficRaw,
   flood: fetchFloodRaw,
   reservoir: fetchReservoirRaw,
+  landslide: fetchLandslideRaw,
   fire: fetchFireRaw,
   security: fetchSecurityRaw,
   suspension: fetchSuspensionRaw,
