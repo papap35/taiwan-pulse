@@ -3,9 +3,10 @@ import { relativeTime } from "@/lib/time";
 
 // Maps a source's category to its /api/debug?source=<key> key (see
 // app/api/debug/route.ts's SOURCES map). Almost 1:1 with Category, except
-// "flood" covers two distinct debug sources (river water level + reservoir,
-// see lib/sourceRegistry.ts) — disambiguated by name below since there's no
-// separate field carrying this on SourceStatus itself.
+// "flood" now covers three distinct debug sources (river water level,
+// reservoir, and debris-flow alerts — see lib/sourceRegistry.ts) —
+// disambiguated by name below since there's no separate field carrying this
+// on SourceStatus itself.
 const CATEGORY_DEBUG_KEY: Partial<Record<Category, string>> = {
   earthquake: "earthquake",
   weather: "weather",
@@ -19,7 +20,9 @@ const CATEGORY_DEBUG_KEY: Partial<Record<Category, string>> = {
 
 function debugKeyFor(status: SourceStatus): string {
   if (status.category === "flood") {
-    return status.name.includes("水庫") ? "reservoir" : "flood";
+    if (status.name.includes("水庫")) return "reservoir";
+    if (status.name.includes("土石流")) return "landslide";
+    return "flood";
   }
   return CATEGORY_DEBUG_KEY[status.category] ?? status.category;
 }

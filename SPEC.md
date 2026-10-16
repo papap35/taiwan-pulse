@@ -10,6 +10,7 @@
 | 交通事件 | TDX 國道事件，需 `TDX_CLIENT_ID`/`SECRET` | [x] |
 | 水利淹水 | 水利署即時水位 join 測站警戒門檻（`WRA_WATER_LEVEL_URL` + `WRA_WATER_STATION_INFO_URL`） | [x]（欄位已用真實回應確認） |
 | 水庫蓄水率（併入水利淹水類別） | 水利署水庫即時水情，`WRA_RESERVOIR_URL`，只在蓄水率 <30% 時顯示 | [x]（欄位已知，但缺少容量上限參考資料集，見技術債） |
+| 土石流警戒（併入水利淹水類別） | 農業部農村發展及水土保持署，`LANDSLIDE_ALERT_URL` | [x]（端點已找到，欄位未經真實回應驗證，見 P1-4） |
 | 火災消防 | 新聞 RSS 關鍵字過濾 | [x] |
 | 治安快訊 | 新聞 RSS 關鍵字過濾，UI 明確標示非官方個案資料 | [x] |
 | 停班停課 | 國家災害防救科技中心 (NCDR) RSS 公告，`NCDR_SUSPENSION_URL` | [x]（端點已確認，欄位仍待驗證，見技術債） |
@@ -301,7 +302,7 @@ epidemic.ts` 的資料解析／聚合／週趨勢邏輯本身已用真實資料�
 **優先級理由**：可重用既有 `flood` 分類色相，實作成本低（河川水位那半已完成，
 只差水庫容量上限這個資料集）
 
-#### 4. 土石流潛勢溪流警戒 `[ ]`
+#### 4. 土石流潛勢溪流警戒 `[x]`
 
 **背景**：颱風豪雨期間的坡地災害警戒，與天氣特報高度相關但屬於不同的
 政府資料集。
@@ -312,6 +313,32 @@ epidemic.ts` 的資料解析／聚合／週趨勢邏輯本身已用真實資料�
 
 **資料來源**：農業部，需確認端點
 **優先級理由**：颱風季節高相關性，但資料來源穩定性待確認
+
+**實作（端點已找到，但欄位名稱未經真實回應驗證）**：透過網路搜尋確認**農業部
+農村發展及水土保持署**（水土保持局已併入該署）在 `246.ardswc.gov.tw` 維運
+一支土石流即時警戒 API：`GET /webService/GetAlertData.ashx`，不需金鑰。公開
+文件描述的回應型態：無警戒時回傳 `{"errorMessage":"目前無警戒"}`；有警戒時
+回傳陣列，每筆含縣市／鄉鎮／村里／發布時間等欄位（該機關另外維運一支
+`ls.ardswc.gov.tw/api/LandslideAlertOpenData` 整合土石流＋大規模崩塌的新端點，
+但公開文件對其欄位描述較少，故優先採用欄位說明較明確的 `GetAlertData.ashx`）。
+
+**分類歸屬**：併入 `flood`（水利大類）而非 `weather`——土石流跟河川水位、
+水庫蓄水率一樣是降雨引發的水文災害，`lib/sourceRegistry.ts` 的
+`CATEGORY_SOURCES.flood` 現在是三個 fetcher（`fetchFlood`、
+`fetchReservoirLevels`、`fetchLandslide`），不需要新色相。
+
+**未能驗證的部分（這是全專案第一個在完全沒有真實回應可核對的情況下實作的
+來源）**：AI agent 沙盒對 `.gov.tw` 網域的連線全面被擋（`WebFetch`
+DNS 查無此網域、本機 proxy 直接拒絕 CONNECT），無法像先前 WRA／TDX／CDC
+那樣取得一筆真實回應核對欄位。`lib/sources/landslide.ts` 的欄位解析（縣市／
+鄉鎮／村里／警戒等級／發布時間）用 `pick()` 多重候選鍵名容錯，嚴重程度
+（`severityFromAlertText()`）比照 `weatherAlert.ts` 既有的
+「土石流紅色→危急、其餘→警戒」慣例，但實際欄位名稱、是否真的有紅/黃分級
+欄位都還是**猜測**，需要部署後使用者用 `/api/debug?source=landslide`
+貼一次真實回應才能像其他來源一樣修正。
+**已測試的部分**：`severityFromAlertText()` 的正常/邊界情況、
+`{"errorMessage":"目前無警戒"}` 視為 0 筆而非失敗、缺少縣市欄位時跳過該筆、
+上游失敗時退回示範資料，見 `lib/sources/landslide.test.ts`。
 
 #### 4.5 擴大既有類別的資料涵蓋範圍（RSS 來源數量、交通事件涵蓋道路種類）`[ ]`
 
